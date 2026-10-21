@@ -16,7 +16,7 @@ export interface UsageResponse {
 }
 
 export class UsageError extends Error {
-  constructor(message: string, readonly kind: 'no-credentials' | 'expired' | 'auth' | 'rate-limited' | 'network' | 'format', readonly retryAfterMs?: number) {
+  constructor(message: string, readonly kind: 'no-credentials' | 'expired' | 'auth' | 'rate-limited' | 'network' | 'format', readonly retryAfterMs?: number, readonly raw?: unknown) {
     super(message);
   }
 }
@@ -101,6 +101,6 @@ export async function fetchUsage(dir: string): Promise<UsageResponse> {
   let json: unknown;
   try { json = await res.json(); } catch { throw new UsageError('Usage endpoint returned something other than JSON.', 'format'); }
   const buckets = parseBuckets(json);
-  if (!buckets.size) throw new UsageError('Usage response had no limit buckets; the endpoint format may have changed.', 'format');
+  if (!buckets.size) throw new UsageError('Usage response had no limit buckets; the endpoint format may have changed.', 'format', undefined, json);
   return { buckets, raw: json };
 }

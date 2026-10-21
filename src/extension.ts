@@ -47,6 +47,7 @@ class Lens implements vscode.Disposable {
   private tailer: LogTailer;
   private estimators = new Map<string, BucketEstimator>();
   private official = new Map<string, Reading>();
+  private lastRaw?: unknown;
   private lastPollOk?: number;
   private lastError?: UsageError;
   private pollTimer?: NodeJS.Timeout;
@@ -127,6 +128,7 @@ class Lens implements vscode.Disposable {
       const now = Date.now();
       const res = await fetchUsage(this.c.dir);
       this.official = res.buckets;
+      this.lastRaw = res.raw;
       for (const [k, r] of res.buckets) {
         if (windowLengthMs(k) === undefined) continue; // e.g. extra-usage credit, shown as-is
         let est = this.estimators.get(k);
@@ -144,6 +146,7 @@ class Lens implements vscode.Disposable {
     } catch (e: any) {
       const err = e instanceof UsageError ? e : new UsageError(String(e?.message ?? e), 'network');
       if (this.lastError?.message !== err.message) this.log(err.message);
+      if (err.raw !== undefined) this.lastRaw = err.raw;
       this.lastError = err;
       if (err.kind === 'rate-limited') this.backoffMs = err.retryAfterMs ?? Math.min(10 * 60_000, Math.max(2 * this.c.pollMs, this.backoffMs * 2));
       else if (err.kind === 'network') this.backoffMs = Math.min(5 * 60_000, Math.max(this.c.pollMs, this.backoffMs * 2));
@@ -242,6 +245,8 @@ class Lens implements vscode.Disposable {
     }
     for (const [k, r] of this.official) if (windowLengthMs(k) === undefined) this.out.appendLine(`${label(k).padEnd(10)} official ${r.utilization}%`);
     this.out.appendLine(`Buckets returned by the endpoint: ${[...this.official.keys()].join(', ') || 'none yet'}`);
+    // Undocumented endpoint: show it verbatim so null or unrecognized buckets are visible too.
+    if (this.lastRaw !== undefined) this.out.appendLine(`Raw endpoint response:\n${JSON.stringify(this.lastRaw, null, 2)}`);
     this.out.appendLine(`Log events in memory: ${this.ledger.size} (folder: ${path.join(this.c.dir, 'projects')})`);
     this.out.show(true);
   }
