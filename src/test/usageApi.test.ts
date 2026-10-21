@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseBuckets } from '../usageApi';
-import { label, fmtPct } from '../format';
+import { label, fmtPct, fmtSigma } from '../format';
 
 test('parses every bucket with a numeric utilization', () => {
   const b = parseBuckets({
@@ -23,6 +23,8 @@ test('labels and formatting', () => {
   assert.equal(label('seven_day_fable'), 'Fable wk');
   const base = { key: 'five_hour', official: 37, value: 37.734, samples: 5 };
   assert.equal(fmtPct({ ...base, kind: 'anchored' }, 1), '37.7%');
-  assert.equal(fmtPct({ ...base, kind: 'lower-bound' }, 1), '≥37.7%');
+  assert.equal(fmtPct({ ...base, kind: 'lower-bound' }, 1), '≈37.7%');
   assert.equal(fmtPct({ ...base, kind: 'official' }, 1), '37%');
+  assert.equal(fmtSigma(0.004, 2), '±<0.01');
+  assert.equal(fmtSigma(0.034, 2), '±0.03');
 });

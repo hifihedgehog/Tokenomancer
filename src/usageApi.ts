@@ -83,7 +83,7 @@ export async function fetchUsage(dir: string): Promise<UsageResponse> {
         Authorization: `Bearer ${creds.accessToken}`,
         'anthropic-beta': 'oauth-2025-04-20',
         Accept: 'application/json',
-        'User-Agent': 'claude-usage-lens/0.1',
+        'User-Agent': 'tokenomancer/0.1',
       },
       signal: AbortSignal.timeout(15_000),
     });

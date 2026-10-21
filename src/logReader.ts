@@ -3,13 +3,14 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { Family, Price, TokenUsage, parseModel, weightedCost } from './pricing';
+import { Family, Price, TokenUsage, costParts, parseModel } from './pricing';
 
 export interface UsageEvent {
   t: number; // epoch ms
   model: string;
   family: Family;
   wu: number; // weighted units (API-equivalent USD) added by this event
+  parts: [number, number, number]; // wu split: [fresh input + cache writes, output, cache reads]
   tokens: TokenUsage; // tokens added by this event
 }
 
@@ -87,10 +88,11 @@ export class EventParser {
     this.seen.set(key, { usage: maxUsage(tokens, prevUsage), t: prev?.t ?? t });
 
     const ov = this.overrides();
-    const wu = weightedCost(model, delta, ov);
+    const parts = costParts(model, delta, ov);
+    const wu = parts[0] + parts[1] + parts[2];
     const any = delta.input + delta.output + delta.cacheRead + delta.cacheWrite5m + delta.cacheWrite1h;
     if (any === 0) return null;
-    return { t, model, family: parseModel(model).family, wu, tokens: delta };
+    return { t, model, family: parseModel(model).family, wu, parts, tokens: delta };
   }
 
   prune(before: number) {

@@ -1,12 +1,14 @@
-# Claude Usage Lens
+# Tokenomancer
 
-A VS Code status-bar item that shows your Claude plan usage with decimals, plus live token counts, for people who use Claude Code in the VS Code extension panel.
+*Reads the runes between the whole numbers.*
+
+See your Claude plan usage to the decimal. Tokenomancer reads Claude Code's live token logs and calibrates them against your official 5-hour, weekly, and Fable limits, so you know exactly where you stand between whole percentages. It lives in the VS Code status bar, built for people who use Claude Code in the extension panel.
 
 ```
-5h 15.4% · wk 23.2% · Fable wk 8.7%
+5h 15.43% · wk 23.18% · Fable wk 8.71%
 ```
 
-Hover for the breakdown: official vs. estimated value per limit, what 1% costs you, current pace, time to the next 1% and to 100%, reset times, and this window's tokens by type and model. Click for a full report in the Output panel.
+Hover for the breakdown: official vs. estimated value per limit with its ± uncertainty, what 1% costs you, current pace, time to the next 1% and to 100%, reset times, and this window's tokens by type and model. Click for a full report in the Output panel.
 
 ## How it works
 
@@ -17,53 +19,65 @@ Claude's usage page and `/usage` only show whole percentages. This extension com
 
 Then, for each limit:
 
-- **Calibrate.** Each time the official number moves up a point, the cost logged since the previous move is one sample of "what 1% costs". The running median of these samples is the calibration. Per-model limits (e.g. Fable) only count that model's tokens.
-- **Anchor.** The moment the number changes (say to 16%), you're at ~16.0%.
-- **Interpolate.** Estimate = anchor + (cost since anchor ÷ cost of 1%), clamped so it never contradicts the official number.
+- **Calibrate.** Between two ticks of the official number (say 15% → 16% → 17%), the requests logged locally cost exactly one point. Each crossing lies somewhere inside its poll interval, so half of each end interval is counted. This deliberately uses no model, so calibration can't just confirm what it already believes. From many intervals it learns what 1% costs, plus a correction factor for each model and token type (fresh input, output, cache reads), starting from API price ratios. If the real limit counts cache reads three times heavier than API prices do, it learns that.
+- **Bound.** Every official reading is a fact: *at that moment you were between 16 and 17*. Pushed forward by the predicted cost of every request since, each reading bounds where you are now. The reading just before a tick and the one just after it bracket the value tightly; intersecting all of them gives the range.
+- **Estimate.** Within that range, the predicted total since the window began is the best guess, weighted by how much the model has earned trust. The hover shows the resulting ± so you can see when the last digit means something.
 
-If the endpoint ever returns decimals itself, those are shown directly.
+Per-model limits (e.g. Fable) only count that model's tokens. If the endpoint ever returns decimals itself, those are used directly.
 
 ### What the markers mean
 
 | Shown | Meaning |
 |---|---|
-| `15%` | Calibrating. Needs one or two 1-point changes while VS Code is open. |
-| `15.4%` | Interpolated from a change seen live. Most accurate. |
-| `~15.4%` | Counted from the start of the window; switches to the above at the next change. |
-| `≥15.4%` | Only a lower bound is known (e.g. right after VS Code started). |
+| `15%` | Calibrating. Needs a few 1-point changes while VS Code is open. |
+| `15.43%` | Pinned between recent ticks. Most accurate. |
+| `~15.43%` | Counted from the start of the window; tightens at the next tick. |
+| `≈15.4%` | Usage elsewhere (another device, the Claude app) moved the number; loosely bounded until the next tick. |
 
-In simulation (`npm test`) the interpolated value stays within about ±0.03 points of the truth on average, versus ±0.25 for the whole-number reading.
+### How accurate
+
+Measured in simulation (`npm test`) against realistic Claude Code traffic, after calibration:
+
+| Scenario | Average error | 90% of the time within |
+|---|---|---|
+| 60 s polling, limit weighs tokens like API prices | ±0.012 points | ±0.03 |
+| 60 s polling, limit weighs tokens differently (learned) | ±0.03 | ±0.07 |
+| 300 s polling | ±0.05 | ±0.15 |
+| The official whole number alone | ±0.23 | ±0.45 |
+
+So hundredths are real at the default 60-second polling when your account's weighting is close to API price ratios, and within a few hundredths when it isn't. No estimate can be finer than one request: the true value only moves when a request completes, typically by 0.01–0.1 points.
 
 ## Limits of the estimate
 
 - **Only this computer is visible.** Chats in the Claude app, cloud sessions, and Claude Code on other machines move the official number without leaving local logs. When that happens the estimate is clamped to the official range and that interval is left out of calibration.
-- **The weights are a proxy.** Anthropic doesn't publish how plan limits weigh models and token types; API prices are the best public stand-in. If your model mix shifts a lot, calibration needs a few ticks to adjust. You can override weights with `claudeUsageLens.priceOverrides`.
+- **The weights start as a proxy.** Anthropic doesn't publish how plan limits weigh models and token types. Tokenomancer starts from API prices and learns corrections, but a model you rarely use gets little data and stays closer to the shared scale. You can set starting weights with `tokenomancer.priceOverrides`.
 - **The usage endpoint is undocumented.** It works today and could change. If it does, the status bar shows a warning and the token counts keep working.
+- **Timing.** Readings are stamped when the request is sent. If the server's count lags behind completed requests by more than a few seconds, the bounds shift slightly.
 - The weekly limits tick slowly, so their calibration takes a day or two of normal use to settle.
 
 ## Settings
 
 | Setting | Default | |
 |---|---|---|
-| `claudeUsageLens.pollSeconds` | 60 | How often to read official numbers (min 30). |
-| `claudeUsageLens.statusBarBuckets` | `[]` | Which limits to show. Empty = 5-hour, weekly, and any Fable limit. The full report lists the keys available on your account. |
-| `claudeUsageLens.decimals` | 1 | Decimal places. |
-| `claudeUsageLens.officialRounding` | `floor` | Whether the official number is truncated (`floor`) or rounded (`round`). |
-| `claudeUsageLens.claudeDir` | `""` | Claude Code config folder, if not `~/.claude`. |
-| `claudeUsageLens.priceOverrides` | `{}` | Per-model weight overrides. |
+| `tokenomancer.pollSeconds` | 60 | How often to read official numbers (min 30). Faster = more precise. |
+| `tokenomancer.statusBarBuckets` | `[]` | Which limits to show. Empty = 5-hour, weekly, and any Fable limit. The full report lists the keys available on your account. |
+| `tokenomancer.decimals` | 2 | Decimal places. |
+| `tokenomancer.officialRounding` | `floor` | Whether the official number is truncated (`floor`) or rounded (`round`). |
+| `tokenomancer.claudeDir` | `""` | Claude Code config folder, if not `~/.claude`. |
+| `tokenomancer.priceOverrides` | `{}` | Per-model weight overrides. |
 
 Commands (Ctrl+Shift+P): **Refresh now**, **Show full report**, **Reset calibration**.
 
 ## Install
 
-From a release: Extensions view → `…` menu → **Install from VSIX…** → pick `claude-usage-lens-0.1.0.vsix`.
+From a release: Extensions view → `…` menu → **Install from VSIX…** → pick `tokenomancer-0.1.0.vsix`.
 
 From source:
 
 ```
 npm install
 npm run package
-code --install-extension claude-usage-lens-0.1.0.vsix
+code --install-extension tokenomancer-0.1.0.vsix
 ```
 
 ## Development
@@ -74,6 +88,6 @@ npm test            # unit tests + estimator simulation
 npm run build       # bundle to dist/extension.js
 ```
 
-Source layout: `pricing.ts` (weights), `logReader.ts` (incremental JSONL tailing and de-duplication), `ledger.ts` (time-indexed events), `usageApi.ts` (credentials and endpoint), `estimator.ts` (calibration and interpolation), `extension.ts` (status bar and commands).
+Source layout: `pricing.ts` (weights), `logReader.ts` (incremental JSONL tailing and de-duplication), `ledger.ts` (time-indexed events), `usageApi.ts` (credentials and endpoint), `estimator.ts` (calibration, weight learning and bounds), `extension.ts` (status bar and commands).
 
-Not affiliated with Anthropic.
+Independent project; not affiliated with Anthropic.

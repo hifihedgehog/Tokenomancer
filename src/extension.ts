@@ -6,10 +6,10 @@ import { Ledger } from './ledger';
 import { BucketEstimator, BucketPersist, Estimate, Reading, Rounding, windowLengthMs } from './estimator';
 import { UsageError, claudeDir, fetchUsage } from './usageApi';
 import { Price } from './pricing';
-import { fmtK, fmtMin, fmtPct, fmtTime, label } from './format';
+import { fmtK, fmtMin, fmtPct, fmtSigma, fmtTime, label } from './format';
 
 const HORIZON_MS = 8 * 24 * 3600_000; // weekly window plus a margin
-const STATE_KEY = 'claudeUsageLens.buckets.v1';
+const STATE_KEY = 'tokenomancer.buckets.v2';
 
 interface Cfg {
   dir: string;
@@ -21,13 +21,13 @@ interface Cfg {
 }
 
 function cfg(): Cfg {
-  const c = vscode.workspace.getConfiguration('claudeUsageLens');
+  const c = vscode.workspace.getConfiguration('tokenomancer');
   return {
     dir: claudeDir(c.get<string>('claudeDir')),
     pollMs: Math.max(30, c.get<number>('pollSeconds', 60)) * 1000,
     buckets: c.get<string[]>('statusBarBuckets', []),
     rounding: c.get<Rounding>('officialRounding', 'floor'),
-    decimals: Math.min(3, Math.max(0, c.get<number>('decimals', 1))),
+    decimals: Math.min(3, Math.max(0, c.get<number>('decimals', 2))),
     overrides: c.get<Record<string, Partial<Price>>>('priceOverrides', {}),
   };
 }
@@ -35,14 +35,14 @@ function cfg(): Cfg {
 const KIND_TEXT: Record<Estimate['kind'], string> = {
   official: 'official only (calibrating — needs a 1-point change while VS Code is open)',
   precise: 'endpoint returned decimals',
-  anchored: 'interpolated from a live tick',
-  'window-start': 'counted from window start (until the next tick)',
-  'lower-bound': 'lower bound (until the next tick)',
+  anchored: 'pinned between recent ticks',
+  'window-start': 'counted from window start (tightens at the next tick)',
+  'lower-bound': 'usage elsewhere moved the number; loosely bounded until the next tick',
 };
 
 class Lens implements vscode.Disposable {
   private item = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
-  private out = vscode.window.createOutputChannel('Claude Usage Lens');
+  private out = vscode.window.createOutputChannel('Tokenomancer');
   private ledger = new Ledger();
   private tailer: LogTailer;
   private estimators = new Map<string, BucketEstimator>();
@@ -63,16 +63,16 @@ class Lens implements vscode.Disposable {
     const saved = ctx.globalState.get<Record<string, BucketPersist>>(STATE_KEY, {});
     for (const [k, v] of Object.entries(saved)) this.estimators.set(k, new BucketEstimator(k, v));
 
-    this.item.command = 'claudeUsageLens.showDetails';
+    this.item.command = 'tokenomancer.showDetails';
     this.item.text = '$(pulse) Claude usage…';
     this.item.show();
 
     this.disposables.push(
-      vscode.commands.registerCommand('claudeUsageLens.refresh', () => this.poll(true)),
-      vscode.commands.registerCommand('claudeUsageLens.showDetails', () => this.showDetails()),
-      vscode.commands.registerCommand('claudeUsageLens.resetCalibration', () => this.resetCalibration()),
+      vscode.commands.registerCommand('tokenomancer.refresh', () => this.poll(true)),
+      vscode.commands.registerCommand('tokenomancer.showDetails', () => this.showDetails()),
+      vscode.commands.registerCommand('tokenomancer.resetCalibration', () => this.resetCalibration()),
       vscode.workspace.onDidChangeConfiguration(e => {
-        if (e.affectsConfiguration('claudeUsageLens')) { this.c = cfg(); this.restartWatch(); this.schedulePoll(0); this.render(); }
+        if (e.affectsConfiguration('tokenomancer')) { this.c = cfg(); this.restartWatch(); this.schedulePoll(0); this.render(); }
       }),
     );
 
@@ -123,16 +123,17 @@ class Lens implements vscode.Disposable {
     clearTimeout(this.pollTimer);
     this.scan(); // ledger must be current before ticks are timed
     try {
-      const res = await fetchUsage(this.c.dir);
+      // A reading describes the moment the server counted, so stamp it when the request is sent.
       const now = Date.now();
+      const res = await fetchUsage(this.c.dir);
       this.official = res.buckets;
       for (const [k, r] of res.buckets) {
         if (windowLengthMs(k) === undefined) continue; // e.g. extra-usage credit, shown as-is
         let est = this.estimators.get(k);
         if (!est) { est = new BucketEstimator(k); this.estimators.set(k, est); }
-        const before = est.toJSON().samples.length;
+        const before = est.sampleCount;
         est.onReading(r, now, this.ledger, this.c.rounding);
-        const after = est.toJSON().samples.length;
+        const after = est.sampleCount;
         if (after !== before) this.log(`${label(k)}: tick to ${r.utilization}%, 1% ≈ $${est.wuPerPct?.toFixed(3)} (n=${after})`);
       }
       this.persist();
@@ -146,7 +147,7 @@ class Lens implements vscode.Disposable {
       this.lastError = err;
       if (err.kind === 'rate-limited') this.backoffMs = err.retryAfterMs ?? Math.min(10 * 60_000, Math.max(2 * this.c.pollMs, this.backoffMs * 2));
       else if (err.kind === 'network') this.backoffMs = Math.min(5 * 60_000, Math.max(this.c.pollMs, this.backoffMs * 2));
-      if (manual) vscode.window.showWarningMessage(`Claude Usage Lens: ${err.message}`);
+      if (manual) vscode.window.showWarningMessage(`Tokenomancer: ${err.message}`);
     }
     this.render();
     this.schedulePoll(Math.max(this.c.pollMs, this.backoffMs));
@@ -195,7 +196,7 @@ class Lens implements vscode.Disposable {
   private tooltip(ests: Estimate[], now: number): vscode.MarkdownString {
     const md = new vscode.MarkdownString(undefined, true);
     md.isTrusted = false;
-    md.appendMarkdown('**Claude Usage Lens**\n\n');
+    md.appendMarkdown('**Tokenomancer**\n\n');
     if (this.lastError) md.appendMarkdown(`$(warning) ${this.lastError.message}\n\n`);
 
     if (ests.length) {
@@ -203,7 +204,7 @@ class Lens implements vscode.Disposable {
       for (const e of ests) {
         const pace = e.ratePctPerHour !== undefined ? `${e.ratePctPerHour.toFixed(2)}%/h` : '—';
         const wpp = e.wuPerPct ? `$${e.wuPerPct.toFixed(2)}` : '—';
-        md.appendMarkdown(`| ${label(e.key)} | ${fmtPct(e, this.c.decimals)} | ${e.official}% | ${wpp} | ${pace} | ${fmtMin(e.minutesToNextPct)} | ${fmtMin(e.minutesTo100)} | ${fmtTime(e.resetsAt)} |\n`);
+        md.appendMarkdown(`| ${label(e.key)} | ${fmtPct(e, this.c.decimals)}${e.sigma !== undefined ? ` ${fmtSigma(e.sigma, this.c.decimals)}` : ''} | ${e.official}% | ${wpp} | ${pace} | ${fmtMin(e.minutesToNextPct)} | ${fmtMin(e.minutesTo100)} | ${fmtTime(e.resetsAt)} |\n`);
       }
       md.appendMarkdown('\n');
     }
@@ -221,7 +222,7 @@ class Lens implements vscode.Disposable {
     if (fam.length && wu > 0) md.appendMarkdown(`by model: ${fam.map(([f, v]) => `${f} ${Math.round((v / wu) * 100)}%`).join(' · ')}  \n`);
 
     md.appendMarkdown('\n');
-    for (const e of ests) md.appendMarkdown(`${label(e.key)}: ${KIND_TEXT[e.kind]}${e.samples ? `, ${e.samples} samples${e.spread !== undefined ? `, ±${Math.round(e.spread * 100)}%` : ''}` : ''}  \n`);
+    for (const e of ests) md.appendMarkdown(`${label(e.key)}: ${KIND_TEXT[e.kind]}${e.samples ? `, ${e.samples} samples${e.spread !== undefined ? `, model error ±${Math.round(e.spread * 100)}% per point` : ''}` : ''}  \n`);
     const last = this.ledger.lastEventTime();
     md.appendMarkdown(`\nLast request seen: ${last ? fmtMin((now - last) / 60_000) + ' ago' : 'none yet'} · last official reading: ${this.lastPollOk ? fmtMin((now - this.lastPollOk) / 60_000) + ' ago' : 'none yet'}  \n`);
     md.appendMarkdown('_Click for the full report._');
@@ -233,7 +234,10 @@ class Lens implements vscode.Disposable {
     this.out.appendLine('');
     this.out.appendLine(`===== Report ${new Date().toLocaleString()} =====`);
     for (const e of this.estimates(now)) {
-      this.out.appendLine(`${label(e.key).padEnd(10)} est ${fmtPct(e, 2).padEnd(8)} official ${e.official}%  [${KIND_TEXT[e.kind]}]`);
+      this.out.appendLine(`${label(e.key).padEnd(10)} est ${fmtPct(e, 3).padEnd(9)}${e.sigma !== undefined ? ` ±${e.sigma.toFixed(3)}` : ''}  official ${e.official}%  [${KIND_TEXT[e.kind]}]`);
+      const est = this.estimators.get(e.key);
+      const feats = est ? est.features().map(([k, g]) => `${k} ×${g.toFixed(2)}`).join(', ') : '';
+      if (feats) this.out.appendLine(`           learned weight corrections vs API prices: ${feats}`);
       this.out.appendLine(`           1% ≈ ${e.wuPerPct ? '$' + e.wuPerPct.toFixed(3) : 'n/a'} (${e.samples} samples${e.spread !== undefined ? `, spread ±${Math.round(e.spread * 100)}%` : ''}), pace ${e.ratePctPerHour?.toFixed(2) ?? '—'}%/h, next 1% in ${fmtMin(e.minutesToNextPct)}, 100% in ${fmtMin(e.minutesTo100)}, resets ${fmtTime(e.resetsAt)}`);
     }
     for (const [k, r] of this.official) if (windowLengthMs(k) === undefined) this.out.appendLine(`${label(k).padEnd(10)} official ${r.utilization}%`);

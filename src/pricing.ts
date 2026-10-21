@@ -117,3 +117,14 @@ export function weightedCost(model: string, usage: TokenUsage, overrides?: Recor
     usage.cacheRead * pr.cacheRead
   ) / 1_000_000;
 }
+
+/** API-equivalent cost split into [fresh input incl. cache writes, output, cache reads]. */
+export function costParts(model: string, usage: TokenUsage, overrides?: Record<string, Partial<Price>>): [number, number, number] {
+  const pr = priceFor(model, usage, overrides);
+  if (!pr) return [0, 0, 0];
+  return [
+    (usage.input * pr.input + usage.cacheWrite5m * pr.cacheWrite5m + usage.cacheWrite1h * pr.cacheWrite1h) / 1_000_000,
+    (usage.output * pr.output) / 1_000_000,
+    (usage.cacheRead * pr.cacheRead) / 1_000_000,
+  ];
+}

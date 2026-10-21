@@ -15,7 +15,7 @@ export function fmtPct(e: Estimate, decimals: number): string {
     case 'precise': return `${e.value.toFixed(Math.max(decimals, 1))}%`;
     case 'anchored': return `${e.value.toFixed(decimals)}%`;
     case 'window-start': return `~${e.value.toFixed(decimals)}%`;
-    case 'lower-bound': return `≥${e.value.toFixed(decimals)}%`;
+    case 'lower-bound': return `≈${e.value.toFixed(decimals)}%`;
   }
 }
 
@@ -40,3 +40,9 @@ export function fmtTime(iso?: string | null): string {
 
 export const fmtK = (n: number) => n >= 1e6 ? `${(n / 1e6).toFixed(2)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}k` : `${n}`;
 
+
+/** "±0.03", or "±<0.01" when the uncertainty is below the displayed precision. */
+export function fmtSigma(sigma: number, decimals: number): string {
+  const unit = Math.pow(10, -decimals);
+  return sigma < unit ? `±<${unit.toFixed(decimals)}` : `±${sigma.toFixed(decimals)}`;
+}

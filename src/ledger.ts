@@ -59,6 +59,15 @@ export class Ledger {
     return m;
   }
 
+  /** Events in [from, to) passing the filter, in time order. */
+  eventsIn(from: number, to: number, filter: FamilyFilter = ALL): UsageEvent[] {
+    const out: UsageEvent[] = [];
+    for (let i = this.lowerBound(from); i < this.events.length && this.events[i].t < to; i++) {
+      if (filter(this.events[i].family)) out.push(this.events[i]);
+    }
+    return out;
+  }
+
   lastEventTime(): number | undefined {
     return this.events.length ? this.events[this.events.length - 1].t : undefined;
   }

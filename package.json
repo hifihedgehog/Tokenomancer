@@ -1,7 +1,7 @@
 {
-  "name": "claude-usage-lens",
-  "displayName": "Claude Usage Lens",
-  "description": "Fine-grained Claude plan usage in the VS Code status bar: live tokens plus decimal estimates of your 5-hour, weekly and per-model limits.",
+  "name": "tokenomancer",
+  "displayName": "Tokenomancer",
+  "description": "See your Claude plan usage to the decimal. Tokenomancer reads Claude Code's live token logs and calibrates them against your official 5-hour, weekly, and Fable limits, so you know exactly where you stand between whole percentages.",
   "version": "0.1.0",
   "publisher": "local",
   "license": "MIT",
@@ -16,7 +16,8 @@
     "claude code",
     "usage",
     "tokens",
-    "rate limit"
+    "rate limits",
+    "quota"
   ],
   "main": "./dist/extension.js",
   "activationEvents": [
@@ -25,28 +26,28 @@
   "contributes": {
     "commands": [
       {
-        "command": "claudeUsageLens.refresh",
-        "title": "Claude Usage Lens: Refresh now"
+        "command": "tokenomancer.refresh",
+        "title": "Tokenomancer: Refresh now"
       },
       {
-        "command": "claudeUsageLens.showDetails",
-        "title": "Claude Usage Lens: Show full report"
+        "command": "tokenomancer.showDetails",
+        "title": "Tokenomancer: Show full report"
       },
       {
-        "command": "claudeUsageLens.resetCalibration",
-        "title": "Claude Usage Lens: Reset calibration"
+        "command": "tokenomancer.resetCalibration",
+        "title": "Tokenomancer: Reset calibration"
       }
     ],
     "configuration": {
-      "title": "Claude Usage Lens",
+      "title": "Tokenomancer",
       "properties": {
-        "claudeUsageLens.pollSeconds": {
+        "tokenomancer.pollSeconds": {
           "type": "number",
           "default": 60,
           "minimum": 30,
-          "description": "How often to read the official usage numbers. Shorter gives sharper calibration but risks rate limiting."
+          "description": "How often to read the official numbers. Precision depends on this: 60 s gives about \u00b10.01\u20130.03 points, 30 s a little better, 300 s about \u00b10.05\u20130.1. Below 30 s risks rate limiting."
         },
-        "claudeUsageLens.statusBarBuckets": {
+        "tokenomancer.statusBarBuckets": {
           "type": "array",
           "items": {
             "type": "string"
@@ -54,28 +55,28 @@
           "default": [],
           "description": "Limit buckets to show in the status bar, by endpoint key (e.g. five_hour, seven_day, seven_day_fable). Empty = 5-hour, weekly, and any Fable bucket. The full report lists available keys."
         },
-        "claudeUsageLens.decimals": {
+        "tokenomancer.decimals": {
           "type": "number",
-          "default": 1,
+          "default": 2,
           "minimum": 0,
           "maximum": 3,
-          "description": "Decimal places for estimated percentages."
+          "description": "Decimal places for estimated percentages. The hover shows the \u00b1 uncertainty, so you can see when the last digit is meaningful."
         },
-        "claudeUsageLens.officialRounding": {
+        "tokenomancer.officialRounding": {
           "type": "string",
           "enum": [
             "floor",
             "round"
           ],
           "default": "floor",
-          "description": "How the official whole-number percentage is rounded. 'floor': 37 means 37.0–37.99. 'round': 37 means 36.5–37.49."
+          "description": "How the official whole-number percentage is rounded. 'floor': 37 means 37.0\u201337.99. 'round': 37 means 36.5\u201337.49."
         },
-        "claudeUsageLens.claudeDir": {
+        "tokenomancer.claudeDir": {
           "type": "string",
           "default": "",
           "description": "Claude Code config folder. Empty = CLAUDE_CONFIG_DIR or ~/.claude."
         },
-        "claudeUsageLens.priceOverrides": {
+        "tokenomancer.priceOverrides": {
           "type": "object",
           "default": {},
           "description": "Override per-model weights (USD per million tokens), keyed by a substring of the model id. Example: {\"fable-5-1\": {\"input\": 10, \"output\": 50, \"cacheWrite5m\": 12.5, \"cacheWrite1h\": 20, \"cacheRead\": 0.25}}"
