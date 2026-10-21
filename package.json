@@ -1,0 +1,100 @@
+{
+  "name": "claude-usage-lens",
+  "displayName": "Claude Usage Lens",
+  "description": "Fine-grained Claude plan usage in the VS Code status bar: live tokens plus decimal estimates of your 5-hour, weekly and per-model limits.",
+  "version": "0.1.0",
+  "publisher": "local",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "claude",
+    "claude code",
+    "usage",
+    "tokens",
+    "rate limit"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "claudeUsageLens.refresh",
+        "title": "Claude Usage Lens: Refresh now"
+      },
+      {
+        "command": "claudeUsageLens.showDetails",
+        "title": "Claude Usage Lens: Show full report"
+      },
+      {
+        "command": "claudeUsageLens.resetCalibration",
+        "title": "Claude Usage Lens: Reset calibration"
+      }
+    ],
+    "configuration": {
+      "title": "Claude Usage Lens",
+      "properties": {
+        "claudeUsageLens.pollSeconds": {
+          "type": "number",
+          "default": 60,
+          "minimum": 30,
+          "description": "How often to read the official usage numbers. Shorter gives sharper calibration but risks rate limiting."
+        },
+        "claudeUsageLens.statusBarBuckets": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Limit buckets to show in the status bar, by endpoint key (e.g. five_hour, seven_day, seven_day_fable). Empty = 5-hour, weekly, and any Fable bucket. The full report lists available keys."
+        },
+        "claudeUsageLens.decimals": {
+          "type": "number",
+          "default": 1,
+          "minimum": 0,
+          "maximum": 3,
+          "description": "Decimal places for estimated percentages."
+        },
+        "claudeUsageLens.officialRounding": {
+          "type": "string",
+          "enum": [
+            "floor",
+            "round"
+          ],
+          "default": "floor",
+          "description": "How the official whole-number percentage is rounded. 'floor': 37 means 37.0–37.99. 'round': 37 means 36.5–37.49."
+        },
+        "claudeUsageLens.claudeDir": {
+          "type": "string",
+          "default": "",
+          "description": "Claude Code config folder. Empty = CLAUDE_CONFIG_DIR or ~/.claude."
+        },
+        "claudeUsageLens.priceOverrides": {
+          "type": "object",
+          "default": {},
+          "description": "Override per-model weights (USD per million tokens), keyed by a substring of the model id. Example: {\"fable-5-1\": {\"input\": 10, \"output\": 50, \"cacheWrite5m\": 12.5, \"cacheWrite1h\": 20, \"cacheRead\": 0.25}}"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p .",
+    "build": "esbuild src/extension.ts --bundle --platform=node --target=node20 --format=cjs --external:vscode --outfile=dist/extension.js --minify",
+    "build:test": "esbuild src/test/*.test.ts --bundle --platform=node --target=node20 --format=cjs --outdir=out/test",
+    "test": "npm run build:test && node --test out/test/*.test.js",
+    "package": "npm run typecheck && npm test && npm run build && vsce package --no-dependencies --allow-missing-repository"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.43",
+    "@types/vscode": "1.90",
+    "@vscode/vsce": "^4.0.0",
+    "esbuild": "^0.28.2",
+    "typescript": "^5.9.3"
+  }
+}
