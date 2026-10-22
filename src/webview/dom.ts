@@ -10,10 +10,24 @@ export interface VNode { t: string; p: Props; c: Child[] }
 interface El extends Element { _p?: Props; _k?: string; [k: string]: any }
 
 const SVG = 'http://www.w3.org/2000/svg';
+const isProps = (x: unknown): x is Props => !!x && typeof x === 'object' && !Array.isArray(x) && !('c' in x && 't' in x);
 
-export function h(t: string, p?: Props | null, ...c: Child[]): VNode {
-  return { t, p: p || {}, c };
+/** h('div.card.ph', props?, ...children): classes ride on the tag; props may be left out.
+ *  Every <svg> is decoration or has a text twin, so it is hidden from screen readers. */
+export function h(tag: string, a?: Props | Child, ...c: Child[]): VNode {
+  let p: Props = {};
+  if (isProps(a)) p = a;
+  else if (a != null) c.unshift(a);
+  const [t, ...cls] = tag.split('.');
+  if (cls.length) p = { ...p, class: cls.join(' ') + (p.class ? ' ' + p.class : '') };
+  if (t === 'svg') p = { 'aria-hidden': 'true', ...p };
+  return { t, p, c };
 }
+
+const n1 = (v: number | string) => (typeof v === 'number' ? String(Math.round(v * 10) / 10) : v);
+/** An SVG rect, its geometry to one decimal. */
+export const rect = (cls: string | null, x: number | string, y: number | string, width: number | string, height: number | string, rx?: number) =>
+  h('rect', { class: cls, x: n1(x), y: n1(y), width: n1(width), height: n1(height), rx });
 
 function flat(c: Child[], out: (VNode | string)[] = []): (VNode | string)[] {
   for (const x of c) {
@@ -25,8 +39,7 @@ function flat(c: Child[], out: (VNode | string)[] = []): (VNode | string)[] {
 }
 
 export function patch(parent: Element, kids: Child[], svg = false): void {
-  const list = flat(kids);
-  const nodes = parent.childNodes;
+  const list = flat(kids), nodes = parent.childNodes;
   for (let i = 0; i < list.length; i++) {
     const v = list[i];
     let n = nodes[i] as El | undefined;
@@ -38,9 +51,9 @@ export function patch(parent: Element, kids: Child[], svg = false): void {
     const key = v.p.key, inSvg = svg || v.t === 'svg';
     if (!n || n.localName !== v.t || n._k !== key) {
       let m: El | undefined;
-      if (key != null) for (let j = i + 1; j < nodes.length; j++) {
+      if (key != null) for (let j = i + 1; j < nodes.length && !m; j++) {
         const x = nodes[j] as El;
-        if (x._k === key && x.localName === v.t) { m = x; break; }
+        if (x._k === key && x.localName === v.t) m = x;
       }
       if (!m) {
         m = (inSvg ? document.createElementNS(SVG, v.t) : document.createElement(v.t)) as El;
@@ -60,21 +73,19 @@ function props(el: El, p: Props): void {
   for (const k in o) {
     if (k in p || k === 'key') continue;
     if (k.startsWith('on')) el[k] = null;
-    else if (k === 'style') el.removeAttribute('style');
     else el.removeAttribute(k);
   }
   for (const k in p) {
     const v = p[k];
     if (k === 'key') continue;
-    if (k.startsWith('on')) { el[k] = v; continue; }
-    if (k === 'style') {
+    if (k.startsWith('on')) el[k] = v;
+    else if (k === 'style') {
       const st = (el as unknown as HTMLElement).style;
       for (const s in v) if (st.getPropertyValue(s) !== v[s]) st.setProperty(s, v[s]);
-      continue;
+    } else if (v !== o[k]) {
+      if (v == null || v === false) el.removeAttribute(k);
+      else el.setAttribute(k, v === true ? '' : String(v));
     }
-    if (v === o[k]) continue;
-    if (v == null || v === false) el.removeAttribute(k);
-    else el.setAttribute(k, v === true ? '' : String(v));
   }
   el._p = p;
 }

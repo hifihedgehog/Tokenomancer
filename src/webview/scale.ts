@@ -1,6 +1,7 @@
 // Pure chart geometry: scales, path strings, lookups and label fitting. No DOM.
 
 import { Lane } from '../ui/types';
+import { abs, round } from './fmt';
 
 export type Scale = (v: number) => number;
 
@@ -10,7 +11,7 @@ export function scale(d0: number, d1: number, r0: number, r1: number): Scale {
 }
 
 /** One decimal, trailing ".0" dropped: path data stays small. */
-export const f1 = (n: number) => String(Math.round(n * 10) / 10);
+export const f1 = (n: number) => String(round(n * 10) / 10);
 
 /** A polyline; non-finite y values lift the pen. */
 export function linePath(xs: number[], ys: number[]): string {
@@ -23,12 +24,13 @@ export function linePath(xs: number[], ys: number[]): string {
   return d;
 }
 
-/** A filled ribbon between two pixel series, split wherever a vertex has no band (NaN or lo ≥ hi). */
-export function bandPath(xs: number[], y0: number[], y1: number[]): string {
+/** A filled ribbon between two pixel series, split wherever a vertex has no band (NaN or lo ≥ hi);
+ *  runs shorter than `least` vertices are dropped, so a clipped ribbon leaves no slivers. */
+export function bandPath(xs: number[], y0: number[], y1: number[], least = 2): string {
   let d = '', start = -1;
-  const ok = (i: number) => isFinite(y0[i]) && isFinite(y1[i]) && Math.abs(y0[i] - y1[i]) > 1e-6;
+  const ok = (i: number) => isFinite(y0[i]) && isFinite(y1[i]) && abs(y0[i] - y1[i]) > 1e-6;
   const close = (a: number, b: number) => {
-    if (b - a < 1) return;
+    if (b - a + 1 < least) return;
     let s = '';
     for (let i = a; i <= b; i++) s += (i === a ? 'M' : 'L') + f1(xs[i]) + ' ' + f1(y1[i]);
     for (let i = b; i >= a; i--) s += 'L' + f1(xs[i]) + ' ' + f1(y0[i]);
@@ -50,7 +52,7 @@ export function nearest(ts: number[], t: number): number {
     const mid = (lo + hi) >> 1;
     if (ts[mid] <= t) lo = mid; else hi = mid;
   }
-  return Math.abs(ts[lo] - t) <= Math.abs(ts[hi] - t) ? lo : hi;
+  return abs(ts[lo] - t) <= abs(ts[hi] - t) ? lo : hi;
 }
 
 /** Index of the last element of sorted `ts` at or before t (−1 if none). */
@@ -83,11 +85,11 @@ export const overlaps = (a: Box, b: Box, pad = 2) =>
   a.x0 < b.x1 + pad && b.x0 < a.x1 + pad && a.y0 < b.y1 + pad && b.y0 < a.y1 + pad;
 
 /** Keeps centred labels that don't collide, scanning left to right. */
-export function fitLabels(xs: number[], widths: number[], gap = 8, min = -Infinity, max = Infinity): boolean[] {
+export function fitLabels(xs: number[], widths: number[], gap = 8, lo = -Infinity, hi = Infinity): boolean[] {
   let right = -Infinity;
   return xs.map((x, i) => {
     const l = x - widths[i] / 2, r = x + widths[i] / 2;
-    if (l < min || r > max || l < right + gap) return false;
+    if (l < lo || r > hi || l < right + gap) return false;
     right = r;
     return true;
   });
@@ -97,6 +99,6 @@ export function fitLabels(xs: number[], widths: number[], gap = 8, min = -Infini
 export function sampleIdx(len: number, n: number): number[] {
   if (len <= n) return Array.from({ length: len }, (_, i) => i);
   const out: number[] = [];
-  for (let k = 0; k < n; k++) out.push(Math.round((k * (len - 1)) / (n - 1)));
+  for (let k = 0; k < n; k++) out.push(round((k * (len - 1)) / (n - 1)));
   return out;
 }
