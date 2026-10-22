@@ -1,0 +1,45 @@
+# Builds the VSIX and publishes a GitHub release for the version in package.json,
+# whenever that version has no release yet. Runs on pushes to main that change
+# package.json (or this file), and on demand from the Actions tab.
+name: Release
+
+on:
+  push:
+    branches: [main]
+    paths: [package.json, .github/workflows/release.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Check for an existing release
+        id: ver
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          v=$(node -p "require('./package.json').version")
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          if gh release view "v$v" >/dev/null 2>&1; then echo "exists=true" >> "$GITHUB_OUTPUT"; fi
+      - name: Build and test
+        if: steps.ver.outputs.exists != 'true'
+        run: |
+          npm ci
+          npm run package
+      - name: Publish release
+        if: steps.ver.outputs.exists != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          v=${{ steps.ver.outputs.version }}
+          notes=$(awk "/^## $v/{f=1;next} /^## /{f=0} f" CHANGELOG.md)
+          printf '%s\n\n**Install:** download `tokenomancer-%s.vsix` below, then in VS Code: Extensions view → `…` → **Install from VSIX…**\n' "$notes" "$v" > notes.md
+          gh release create "v$v" "tokenomancer-$v.vsix" --target "$GITHUB_SHA" --title "Tokenomancer $v" --notes-file notes.md
