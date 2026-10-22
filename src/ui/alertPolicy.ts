@@ -40,6 +40,12 @@ function limitMessage(b: BucketVM, now: number, vm: ViewModel): string {
   return `Claude ${nameOf(b)} limit reached.${when}`;
 }
 
+/**
+ * The dedupe file for an alert id. Ids hold ':' and endpoint keys, neither safe in a Windows file
+ * name, so anything outside a small set becomes '_' (distinct ids for every real key).
+ */
+export const firedFileName = (id: string) => `${id.replace(/[^A-Za-z0-9_@.-]/g, '_')}.fired`;
+
 export class AlertPolicy {
   private fired = new Set<string>();
   private rearmed: string[] = [];

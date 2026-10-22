@@ -48,6 +48,10 @@ test('the sample report has every section at diagnostic precision', async () => 
   // Three pinned limits share one explanation line.
   assert.equal(md.match(/Pinned between two official ticks/g)?.length, 1);
   assert.match(md, /\| Fable cache reads \| ×\d\.\d\d \| ([+−]\d+%|in line) \|/);
+  // Money in cents; the cost of a point, often under a dollar, with one more digit.
+  assert.ok(md.includes('| Fable | $19.00 | 82% |') && md.includes('| Haiku | $0.69 | 3% |'));
+  assert.match(md, /\| 5-hour \|[^\n]*\| \$\d+\.\d{3} \| \d+ \|/);
+  assert.ok(!md.includes('\n\n\n'), 'one blank line between blocks');
 });
 
 test('sample data, stale readings and errors are stated plainly', () => {

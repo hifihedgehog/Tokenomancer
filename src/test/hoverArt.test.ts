@@ -133,7 +133,7 @@ test('Loupe: each state draws its own shape in every theme', () => {
     assert.equal(tick(stale), undefined);
     assert.ok(stale.includes('<path d="M291 4l5 4-5 4z"'), `${t}: the "at least" chevron`);
     const band = rects(stale).find(r => r.y === 2 && r.h === 12)!;
-    assert.ok(band.x + band.w >= 298, `${t}: the band runs to the right end`);
+    assert.equal(band.x + band.w, 288, `${t}: the band runs up to the chevron, which stands clear of it`);
 
     assert.ok(!svg(STATES.limit).includes('<rect') && !svg(STATES.idle).includes('<rect'), `${t}: nothing to magnify`);
   }
@@ -147,6 +147,10 @@ test('Loupe: staves at the bracket edges, tenth ticks between, chevrons when the
   const ticks = s.match(/<path d="([^"]*)" fill="#CCCCCC" fill-opacity="0.35"\/>/)![1].split('z').filter(Boolean);
   assert.equal(ticks.length, 18);
   assert.ok(s.includes('M291 4l5 4-5 4z') && s.includes('M9 4L4 8l5 4z'));
+  for (const theme of THEMES) {
+    const bands = rects(decode(loupeSvg(l, theme, palette(theme)))).filter(r => r.y >= 2 && r.y < 5);
+    assert.ok(bands.length && bands.every(r => r.x >= 12 && r.x + r.w <= 288), `${theme}: bands stop short of both chevrons`);
+  }
 });
 
 // ───────────────────────────── text fallbacks ─────────────────────────────

@@ -105,10 +105,18 @@ function loupeBody(l: LoupeVM, theme: ThemeKind, p: Palette, W: number, H: numbe
   const at = (v: number, w: number) => Math.min(W - w, Math.max(0, px(v) - Math.floor(w / 2)));
   const back: string[] = [], scale: string[] = [], front: string[] = [];
   const hatched = 'fill="url(#h)"';
+  // A chevron says the band carries on past that end ("at least" for stale). Bands stop short of
+  // it, so it stands on clear ground even over a hatch.
+  const chevR = !!l.overR || l.mode === 'atLeast', chevL = !!l.overL;
+  const xMin = chevL ? 12 : 0, xMax = chevR ? 288 : W;
+  /** Whole pixels, rounded outward: crisp edges that never draw a band narrower than it is. */
+  const span = (b: [number, number], minW: number): [number, number] => {
+    const a = Math.max(xMin, Math.floor(x(b[0])));
+    return [a, Math.min(xMax, Math.max(Math.ceil(x(b[1])), a + minW))];
+  };
   const band = (b: [number, number] | undefined, y: number, h: number, attrs: string) => {
     if (!b) return;
-    // Whole pixels, rounded outward: crisp edges that never draw a band narrower than it is.
-    const a = Math.floor(x(b[0])), z = Math.max(Math.ceil(x(b[1])), a + 1);
+    const [a, z] = span(b, 1);
     back.push(rect(a, y, z - a, h, attrs));
   };
 
@@ -116,7 +124,7 @@ function loupeBody(l: LoupeVM, theme: ThemeKind, p: Palette, W: number, H: numbe
     case 'graded':
       band(l.band2, 4, 8, hc ? hatched : fill(p.accent, 0.22));
       if (hc && l.band1) {
-        const a = Math.floor(x(l.band1[0])), z = Math.max(Math.ceil(x(l.band1[1])), a + 2);
+        const [a, z] = span(l.band1, 2);
         back.push(rect(a + 0.5, 2.5, z - a - 1, 11, `fill="none" stroke="${p.ink}"`));
       } else band(l.band1, 2, 12, fill(p.accent, 0.45));
       break;
@@ -150,12 +158,8 @@ function loupeBody(l: LoupeVM, theme: ThemeKind, p: Palette, W: number, H: numbe
     const w = l.mode === 'flat' ? 1 : 2;
     front.push(rect(at(l.tick, w), 0, w, H, fill(p.ink, l.mode === 'flat' ? 0.7 : 1)));
   }
-  // Chevrons say the band carries on past the drawn range ("at least" for stale).
-  const chevron = (right: boolean) => right
-    ? `<path d="M291 4l5 4-5 4z" ${fill(p.accent)}/>`
-    : `<path d="M9 4L4 8l5 4z" ${fill(p.accent)}/>`;
-  if (l.overR || l.mode === 'atLeast') front.push(chevron(true));
-  if (l.overL) front.push(chevron(false));
+  if (chevR) front.push(`<path d="M291 4l5 4-5 4z" ${fill(p.accent)}/>`);
+  if (chevL) front.push(`<path d="M9 4L4 8l5 4z" ${fill(p.accent)}/>`);
 
   return { defs: hc && l.band2 ? hatch('h', p.ink) : '', marks: back.join('') + scale.join('') + front.join('') };
 }
