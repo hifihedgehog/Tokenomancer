@@ -8,7 +8,7 @@ import { button, chip } from './cards';
 import { sechead } from './chart';
 import { Ctx } from './ctx';
 import { Child, h, VNode } from './dom';
-import { BETWEEN, compact, dots, edgePct, etaRange, family, max, PART, plural, rate, round, share, TWO_TICKS, usd } from './fmt';
+import { BETWEEN, ONE_TICK, compact, dots, edgePct, etaRange, family, max, PART, plural, rate, round, share, TWO_TICKS, usd } from './fmt';
 import { icon, rune } from './icons';
 import { windowFigure } from './windowChart';
 import { zoomFigure } from './zoomChart';
@@ -16,22 +16,20 @@ import { zoomFigure } from './zoomChart';
 const upper = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 export function facts(c: Ctx, b: BucketVM): VNode {
-  const vm = c.vm, p = b.pace, ms = c.ageMs(), t = b.text, rows: [string, string, string?][] = [];
-  // Most tips open with the state's own word; don't say it twice.
-  rows.push(['State', t.stateTip.toLowerCase().startsWith(t.state) ? t.stateTip : `${upper(t.state)} — ${t.stateTip}`]);
-  rows.push(['Official', t.official + (ms !== undefined ? ` · ${age(ms, 'view')}` : '')]);
-  if (b.lo !== undefined && b.hi !== undefined && b.state !== 'calibrating') rows.push(['Bounds', `${b.lo.toFixed(2)}–${b.hi.toFixed(2)}%`]);
-  if (p?.nextTick) {
-    const n = p.nextTick;
-    rows.push(['Next 1%', `${edgePct(n.edge)} ${etaRange(n.from - vm.now, n.to - vm.now)} (~${clock(roundClock((n.from + n.to) / 2, 5), vm.now, vm.fmt)})`]);
-  }
-  const pace = p && dots(p.r15 !== undefined && `${rate(p.r15)} now (this computer)`, p.rAvg !== undefined && `${rate(p.rAvg)} window average`);
-  if (pace) rows.push(['Pace', pace]);
-  rows.push(['Projection', t.verdict]);
-  if (p) rows.push(['Even use', upper(evenText(p.evenGap))]);
-  if (t.resetsAt) rows.push(['Resets', t.resetsAt + (t.resetsIn ? ` (in ${t.resetsIn})` : '')]);
-  if (b.calib.wuPerPct) rows.push(['1% ≈', `${usd(b.calib.wuPerPct)} API-equivalent`, 'API-price value of the tokens that move this limit 1 point; a translation, not a bill']);
-  return h('dl.facts', rows.map(([k, v, tip]) => h('div', h('dt', { title: tip ?? null }, k), h('dd', v))));
+  const vm = c.vm, p = b.pace, n = p?.nextTick, ms = c.ageMs(), t = b.text;
+  const rows: [string, unknown, string?][] = [
+    // Most tips open with the state's own word; don't say it twice.
+    ['State', t.stateTip.toLowerCase().startsWith(t.state) ? t.stateTip : `${upper(t.state)} — ${t.stateTip}`],
+    ['Official', t.official + (ms !== undefined ? ` · ${age(ms, 'view')}` : '')],
+    ['Bounds', b.lo !== undefined && b.hi !== undefined && b.state !== 'calibrating' && `${b.lo.toFixed(2)}–${b.hi.toFixed(2)}%`],
+    ['Next 1%', n && `${edgePct(n.edge)} ${etaRange(n.from - vm.now, n.to - vm.now)} (~${clock(roundClock((n.from + n.to) / 2, 5), vm.now, vm.fmt)})`],
+    ['Pace', p && dots(p.r15 !== undefined && `${rate(p.r15)} now (this computer)`, p.rAvg !== undefined && `${rate(p.rAvg)} window average`)],
+    ['Projection', t.verdict],
+    ['Even use', p && upper(evenText(p.evenGap))],
+    [b.state === 'reset' ? 'Reset' : 'Resets', t.resetsAt && t.resetsAt + (t.resetsIn ? ` (in ${t.resetsIn})` : '')],
+    ['1% ≈', b.calib.wuPerPct && `${usd(b.calib.wuPerPct)} API-equivalent`, 'API-price value of the tokens that move this limit 1 point; not a bill'],
+  ];
+  return h('dl.facts', rows.filter(r => r[1]).map(([k, v, tip]) => h('div', h('dt', { title: tip ?? null }, k), h('dd', v as string))));
 }
 
 function bars(title: string, rows: [string, number][], fmt: (v: number) => string): VNode {
@@ -68,7 +66,7 @@ export function mix(m?: MixVM): VNode {
 function calibText(b: BucketVM): string {
   const k = b.calib;
   if (b.state === 'calibrating' || !k.samples) return k.armed
-    ? '1 of 2 ticks seen; the next one while you use Claude Code here completes calibration.'
+    ? ONE_TICK
     : TWO_TICKS;
   return dots(k.wuPerPct && `1% ≈ ${usd(k.wuPerPct)} API-equivalent`, plural(k.samples, 'calibration tick'),
     k.spread !== undefined && `model error ±${max(1, round(k.spread * 100))}% per point`);
@@ -113,18 +111,20 @@ export function local(l: LocalVM): Child {
 }
 
 export function signedOut(c: Ctx): VNode {
-  // The reason names the folder searched; show it as a path, not prose.
-  const m = c.vm.reasons.map(r => /^(Looked for .*? in )(.+?)(\.\s.*)?$/.exec(r));
   return h('section.empty',
     rune('empty', 32, true, 'dim'),
     h('h2', 'No Claude Code sign-in found'),
     h('p', 'Tokenomancer reads your plan usage with the Claude Code login on this computer. Sign in to Claude Code and this view fills in by itself.'),
-    c.vm.reasons.map((r, i) => h('p.cap', m[i] ? [m[i]![1], h('code', m[i]![2]), '.'] : r)),
+    // The reason names the folder searched; show it as a path, not prose.
+    c.vm.reasons.map(r => {
+      const m = /^(Looked for .*? in )(.+?)(\.\s.*)?$/.exec(r);
+      return h('p.cap', m ? [m[1], h('code', m[2]), '.'] : r);
+    }),
     h('div.acts', button('Preview with sample data', 'previewSampleData', c), button('Set Claude folder…', 'setClaudeDir', c, 'link')));
 }
 
 export function footer(c: Ctx): VNode {
-  const vm = c.vm, role = vm.fresh.role === 'shared' ? 'another VS Code window reads the endpoint for this one' : 'this window reads the endpoint';
+  const vm = c.vm, role = vm.fresh.role === 'shared' ? 'another VS Code window reads the endpoint' : 'this window reads the endpoint';
   return h('footer.foot',
     h('p', dots(`Official every ${round(vm.pollMs / 1000)} s`, role, 'logs stay on this computer', (c.busy || vm.fresh.refreshing) && 'Refreshing…')),
     vm.extras.length > 0 && h('p', vm.extras.map(e => `${e.label}: ${e.text}`).join(' · ')),

@@ -3,6 +3,8 @@
 // changed attributes and text are written. Strings always become text nodes (never markup), and
 // `style` is applied through CSSOM because the CSP forbids style attributes.
 
+import { f1 } from './scale';
+
 export type Child = VNode | string | number | null | undefined | false | Child[];
 export type Props = Record<string, any>;
 export interface VNode { t: string; p: Props; c: Child[] }
@@ -24,7 +26,7 @@ export function h(tag: string, a?: Props | Child, ...c: Child[]): VNode {
   return { t, p, c };
 }
 
-const n1 = (v: number | string) => (typeof v === 'number' ? String(Math.round(v * 10) / 10) : v);
+const n1 = (v: number | string) => (typeof v === 'number' ? f1(v) : v);
 /** An SVG rect, its geometry to one decimal. */
 export const rect = (cls: string | null, x: number | string, y: number | string, width: number | string, height: number | string, rx?: number) =>
   h('rect', { class: cls, x: n1(x), y: n1(y), width: n1(width), height: n1(height), rx });

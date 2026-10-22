@@ -5,10 +5,10 @@
 import { roundClock } from '../ui/present';
 import { axisHour, span } from '../ui/time';
 import { BucketVM, DetailVM, ZoomSeries } from '../ui/types';
-import { cells, figure, hline, hourLabels, Key, label, lanePaths, Plot, readout, table, tip, Tip, vline } from './chart';
+import { cells, figure, hline, hourLabels, Key, label, lanePaths, Plot, readout, ribbons, table, tip, Tip, vline } from './chart';
 import { Ctx } from './ctx';
 import { Child, h, rect, VNode } from './dom';
-import { BETWEEN, ceil, clamp, dots, edgePct, hms, localBoundaries, max, min, round, TWO_TICKS, WAITING } from './fmt';
+import { BETWEEN, ONE_TICK, ceil, clamp, dots, edgePct, hms, localBoundaries, max, min, round, TWO_TICKS, WAITING } from './fmt';
 import { bandPath, f1, fitLabels, linePath, scale, textW } from './scale';
 
 const MIN = 60_000;
@@ -47,19 +47,11 @@ export function zoomFigure(c: Ctx, b: BucketVM, d?: DetailVM): VNode {
   marks.push(...lanePaths(z.lanes, X, Y));
 
   // Recorded estimate: graded ribbons clipped to its proven bounds; loose stretches are one flat band.
-  const xs = hs.t.map(X), yy: number[][] = [[], [], [], [], [], []], line: number[] = [];
-  for (let i = 0; i < n; i++) {
-    const v = hs.v[i], s = hs.s[i], flat = hs.flat[i];
-    const lo = isFinite(hs.lo[i]) ? hs.lo[i] : -Infinity, hi = isFinite(hs.hi[i]) ? hs.hi[i] : Infinity;
-    [[v - 2 * s, v + 2 * s, !flat], [v - s, v + s, !flat], [lo, hi, flat]].forEach(([a, e, on], k) => {
-      const p = max(a as number, lo), q = min(e as number, hi), ok = on && p < q;
-      yy[2 * k].push(ok ? Y(p) : NaN);
-      yy[2 * k + 1].push(ok ? Y(q) : NaN);
-    });
-    line.push(flat ? NaN : Y(v));
-  }
-  marks.push(h('path.band2', { d: bandPath(xs, yy[4], yy[5]) }), h('path.band2', { d: bandPath(xs, yy[0], yy[1]) }),
-    h('path.band1', { d: bandPath(xs, yy[2], yy[3]) }), h('path.line', { d: linePath(xs, line) }));
+  const xs = hs.t.map(X), flat = (i: number) => hs.flat[i], at = (y: number[], i: number) => (flat(i) ? Y(y[i]) : NaN);
+  const fin = (y: number[], i: number, d: number) => (isFinite(y[i]) ? y[i] : d);
+  marks.push(h('path.band2', { d: bandPath(xs, xs.map((_, i) => at(hs.lo, i)), xs.map((_, i) => at(hs.hi, i))) }),
+    ...ribbons(xs, hs.v, hs.s, i => fin(hs.lo, i, -Infinity), i => fin(hs.hi, i, Infinity), Y, 2, flat),
+    h('path.line', { d: linePath(xs, hs.v.map((v, i) => (flat(i) ? NaN : Y(v)))) }));
 
   // Tick intervals: the official number crossed this edge somewhere between two readings.
   const ticks = z.ticks.filter(k => k.edge >= z.yMin && k.edge <= z.yMax && k.to >= z.from);
@@ -83,7 +75,7 @@ export function zoomFigure(c: Ctx, b: BucketVM, d?: DetailVM): VNode {
   // While calibrating, the lanes, ticks and rug are the whole story: say so below, hide nothing.
   if (calibrating) {
     caps.push(b.calib.armed
-      ? 'Waiting for one more whole-number tick while you use Claude Code here (1 of 2 seen).'
+      ? ONE_TICK
       : TWO_TICKS);
   } else {
     const v = b.value, yv = Y(clamp(v, z.yMin, z.yMax));
@@ -97,7 +89,6 @@ export function zoomFigure(c: Ctx, b: BucketVM, d?: DetailVM): VNode {
       const y0 = Y(clamp(b.hi, z.yMin, z.yMax));
       over.push(rect('band1', xn - 2, y0, 4, max(2, Y(clamp(b.lo, z.yMin, z.yMax)) - y0)));
     } else over.push(h('circle.dotm', { cx: f1(xn), cy: f1(yv), r: 4 }));
-    if (R - xn > 12) over.push(h('line.leader', { x1: f1(xn + 6), x2: R + 4, y1: round(yv) + 0.5, y2: round(yv) + 0.5 }));
     const ly = clamp(yv + 4, T + 4, B - 18);
     over.push(label(R + 8, ly, b.text.value, 'endv'), label(R + 8, ly + 16, dots(b.text.pm, b.text.state), 'lbl12'));
   }
@@ -108,8 +99,8 @@ export function zoomFigure(c: Ctx, b: BucketVM, d?: DetailVM): VNode {
   legend.push(['lane', 'Official whole number'], ['tick', 'Tick, between two readings'], ['rug', 'Readings']);
   caps.unshift(b.loupe.mode === 'flat'
     ? 'Loose: usage outside this computer moved the official number; the estimate is only bounded to the band until the next tick.'
-    : n ? 'Each band is one official whole percent. The estimate stays inside the band the endpoint reported and tightens at each tick.'
-      : 'Each band is one official whole percent; the estimate appears once calibrated.');
+    : 'Each band is one official whole percent' + (n ? '. The estimate stays inside the band the endpoint reported and tightens at each tick.'
+      : '; the estimate appears once calibrated.'));
   return figure(c, plot, { ...base, tip: tooltip(c, b, z, X, Y, min(now, t1), ticks), table: () => zoomTable(c, b, z) });
 }
 

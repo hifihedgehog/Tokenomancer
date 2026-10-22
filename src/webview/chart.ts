@@ -7,9 +7,9 @@ import { axisHour } from '../ui/time';
 import { BucketVM, Lane, ViewModel } from '../ui/types';
 import { Ctx, tableOpen } from './ctx';
 import { Child, h, rect, VNode } from './dom';
-import { clamp, max, round } from './fmt';
+import { clamp, max, min, round } from './fmt';
 import { icon } from './icons';
-import { f1, fitLabels, laneAt, nearest, textW } from './scale';
+import { bandPath, f1, fitLabels, laneAt, nearest, textW } from './scale';
 
 export interface Plot {
   id: 'win' | 'zoom';
@@ -53,6 +53,20 @@ export const sechead = (title: string, sub: string, ...right: Child[]) => h('div
 export const hline = (cls: string, x1: number, x2: number, y: number) => h('line', { class: cls, x1, x2, y1: crisp(y), y2: crisp(y) });
 export const vline = (cls: string, x: number, y1: number, y2: number) => h('line', { class: cls, x1: crisp(x), x2: crisp(x), y1, y2 });
 
+/** ±2σ then ±1σ ribbons around v, each vertex clipped to [lo(i), hi(i)]; skipped vertices get none. */
+export function ribbons(xs: number[], v: number[], s: number[], lo: (i: number) => number, hi: (i: number) => number,
+  Y: (v: number) => number, least = 2, skip = (_: number) => false): VNode[] {
+  return [2, 1].map(k => {
+    const y0: number[] = [], y1: number[] = [];
+    v.forEach((x, i) => {
+      const a = max(x - k * s[i], lo(i)), e = min(x + k * s[i], hi(i)), ok = !skip(i) && a < e;
+      y0.push(ok ? Y(a) : NaN);
+      y1.push(ok ? Y(e) : NaN);
+    });
+    return h(`path.band${k}`, { d: bandPath(xs, y0, y1, least) });
+  });
+}
+
 /** Official runs: one fill path and one edge path. With `join`, runs less than that many ms apart
  *  share one staircase along their floors (a tick is one poll wide, so separate runs would read as
  *  dashes); without it each run gets its floor and its ceiling, as the zoom chart needs. */
@@ -71,8 +85,8 @@ export function lanePaths(lanes: Lane[], X: (t: number) => number, Y: (v: number
 export function figure(c: Ctx, f: Plot, o: FigureParts): VNode {
   const tip = c.cur?.id === f.id ? o.tip : undefined, open = tableOpen(c, f.id);
   const toT = (e: PointerEvent) => {
-    const r = (e.currentTarget as Element).getBoundingClientRect();
-    const px = ((e.clientX - r.left) * f.W) / (r.width || f.W);
+    // The SVG is drawn at its measured width, so a CSS pixel is a plot unit.
+    const px = e.clientX - (e.currentTarget as Element).getBoundingClientRect().left;
     return f.t0 + ((clamp(px, f.L, f.R) - f.L) / (f.R - f.L || 1)) * (f.t1 - f.t0);
   };
   const flip = tip && tip.x > f.W * 0.6;
@@ -115,9 +129,10 @@ function chartKey(c: Ctx, f: Plot, e: KeyboardEvent) {
 }
 
 export type Key = 'line' | 'lane' | 'dash' | 'even' | 'band1' | 'band2' | 'tick' | 'rug';
+const RULE = 'M0 5h14', BOX = 'M0 1h14v8H0z';
 const KEYS: Record<Key, [string, string]> = {
-  line: ['line', 'M0 5h14'], dash: ['proj', 'M0 5h14'], even: ['even', 'M0 5.5h14'],
-  lane: ['klane', 'M.5 1.5h13v7H.5z'], band1: ['band1', 'M0 1h14v8H0z'], band2: ['band2', 'M0 1h14v8H0z'],
+  line: ['line', RULE], dash: ['proj', RULE], even: ['even', 'M0 5.5h14'],
+  lane: ['klane', 'M.5 1.5h13v7H.5z'], band1: ['band1', BOX], band2: ['band2', BOX],
   tick: ['tickbar', 'M1 2v6m12-6v6M1 5h12'], rug: ['rug', 'M2 3v4m4-4v4m4-4v4'],
 };
 

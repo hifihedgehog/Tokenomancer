@@ -27,19 +27,12 @@ export function linePath(xs: number[], ys: number[]): string {
 /** A filled ribbon between two pixel series, split wherever a vertex has no band (NaN or lo ≥ hi);
  *  runs shorter than `least` vertices are dropped, so a clipped ribbon leaves no slivers. */
 export function bandPath(xs: number[], y0: number[], y1: number[], least = 2): string {
-  let d = '', start = -1;
-  const ok = (i: number) => isFinite(y0[i]) && isFinite(y1[i]) && abs(y0[i] - y1[i]) > 1e-6;
-  const close = (a: number, b: number) => {
-    if (b - a + 1 < least) return;
-    let s = '';
-    for (let i = a; i <= b; i++) s += (i === a ? 'M' : 'L') + f1(xs[i]) + ' ' + f1(y1[i]);
-    for (let i = b; i >= a; i--) s += 'L' + f1(xs[i]) + ' ' + f1(y0[i]);
-    d += s + 'Z';
-  };
+  let d = '', run: number[] = [];
+  const pt = (y: number[]) => (i: number) => f1(xs[i]) + ' ' + f1(y[i]);
   for (let i = 0; i <= xs.length; i++) {
-    if (i < xs.length && ok(i)) { if (start < 0) start = i; continue; }
-    if (start >= 0) close(start, i - 1);
-    start = -1;
+    if (i < xs.length && isFinite(y0[i]) && isFinite(y1[i]) && abs(y0[i] - y1[i]) > 1e-6) { run.push(i); continue; }
+    if (run.length >= least) d += 'M' + run.map(pt(y1)).join('L') + 'L' + run.reverse().map(pt(y0)).join('L') + 'Z';
+    run = [];
   }
   return d;
 }

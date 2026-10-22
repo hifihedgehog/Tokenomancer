@@ -1,8 +1,10 @@
 // Builds media/view.js and one standalone page per view-model fixture and surface, for the
 // headless-Chromium preview harness or any browser:
 //   node scripts/preview.mjs            → out/preview/<fixture>-<panel|view>.html and index.html
-// Each page is the real shell (same CSP) plus a nonce'd boot script that stubs acquireVsCodeApi
-// (unless the harness already did) and posts the fixture's {type:'model'} message.
+// plus <fixture>-panel-tables.html (table twins open) and <fixture>-view-open.html (every
+// disclosure open). Each page is the real shell (same CSP) plus a nonce'd boot script that seeds
+// the saved UI state, stubs acquireVsCodeApi (unless the harness already did) and posts the
+// fixture's {type:'model'} message.
 import { build } from 'esbuild';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -26,16 +28,20 @@ for (const file of fs.readdirSync(fixtures).filter(f => f.endsWith('.json')).sor
   const name = file.replace(/\.json$/, '');
   const fx = JSON.parse(fs.readFileSync(path.join(fixtures, file), 'utf8'));
   const msg = JSON.stringify({ type: 'model', vm: fx.vm, detail: fx.detail, theme: fx.theme ?? 'dark' }).replace(/</g, '\\u003c');
-  for (const surface of ['panel', 'view']) {
+  const variants = [['panel', '', {}], ['view', '', {}], ['panel', '-tables', { tables: { win: true, zoom: true } }],
+    ['view', '-open', { open: { zoom: true, mix: true, calib: true } }]];
+  for (const [surface, suffix, ui] of variants) {
     const nonce = 'preview' + Math.random().toString(36).slice(2).padEnd(12, '0');
+    const state = JSON.stringify({ v: 1, tables: {}, open: {}, ...ui });
     const boot = `<script nonce="${nonce}">
-window.acquireVsCodeApi = window.acquireVsCodeApi || (() => { let s; return { postMessage: m => console.log('webview →', JSON.stringify(m)), getState: () => s, setState: v => { s = v; } }; });
+window.__state = ${state};
+window.acquireVsCodeApi = window.acquireVsCodeApi || (() => ({ postMessage: m => console.log('webview →', JSON.stringify(m)), getState: () => window.__state, setState: v => { window.__state = v; } }));
 addEventListener('load', () => setTimeout(() => window.postMessage(${msg}, '*'), 0));
 </script>
 `;
     const html = renderShell({ cspSource: 'file:', nonce, scriptUri: rel('media/view.js'), styleUri: rel('media/view.css'), surface })
       .replace(`<script nonce="${nonce}" src=`, `${boot}<script nonce="${nonce}" src=`);
-    const page = `${name}-${surface}.html`;
+    const page = `${name}-${surface}${suffix}.html`;
     fs.writeFileSync(path.join(out, page), html);
     pages.push(page);
   }

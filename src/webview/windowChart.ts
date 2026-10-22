@@ -5,7 +5,7 @@
 import { runOutClock } from '../ui/present';
 import { axisDay, axisHour, clock } from '../ui/time';
 import { BucketVM, DetailVM } from '../ui/types';
-import { cells, figure, hline, hourLabels, label, lanePaths, Plot, readout, Row, table, tip, Tip, vline } from './chart';
+import { cells, figure, hline, hourLabels, label, lanePaths, Plot, readout, ribbons, Row, table, tip, Tip, vline } from './chart';
 import { Ctx } from './ctx';
 import { Child, h, VNode } from './dom';
 import { ceil, clamp, dots, localBoundaries, max, min, round, WAITING, when, windowRange } from './fmt';
@@ -29,26 +29,18 @@ export function windowFigure(c: Ctx, b: BucketVM, d?: DetailVM): VNode {
     t0, t1: max(t1, t0 + 1), step: days ? HOUR : 300_000, end: clamp(now, t0, t1),
   };
   const parts = { title: 'This window', sub: dots(b.long, range), marks, over, legend: [] as [any, string][], caps: [] as string[] };
+  marks.push(hline('axis', L, R, B));
   if (!ok) {
-    marks.push(hline('axis', L, R, B));
     return figure(c, plot, { ...parts, note: b.state === 'idle' ? 'No usage in this window yet — the next message starts it.' : WAITING });
   }
 
   marks.push(...xAxis(c, t0, t1, X, T, B, days, over));
-  marks.push(hline('axis', L, R, B), ...lanePaths(lanes, X, Y, 3 * vm.pollMs));
+  marks.push(...lanePaths(lanes, X, Y, 3 * vm.pollMs));
 
   // Ribbons are clipped to the official run at each vertex and skipped where the reconstruction
   // left it: the official number is the truth the curve answers to.
-  const xs = est.t.map(X), band: number[][] = [[], [], [], []];
-  est.t.forEach((t, i) => {
-    const l = laneAt(lanes, t), a = l ? l.lo : 0, z = l ? l.hi : 100, v = est.v[i], s = est.s[i];
-    [2, 1].forEach((k, j) => {
-      const lo = max(v - k * s, a), hi = min(v + k * s, z);
-      band[2 * j].push(lo < hi ? Y(lo) : NaN);
-      band[2 * j + 1].push(lo < hi ? Y(hi) : NaN);
-    });
-  });
-  marks.push(h('path.band2', { d: bandPath(xs, band[0], band[1], 3) }), h('path.band1', { d: bandPath(xs, band[2], band[3], 3) }),
+  const xs = est.t.map(X), lane = (i: number) => laneAt(lanes, est.t[i]);
+  marks.push(...ribbons(xs, est.v, est.s, i => lane(i)?.lo ?? 0, i => lane(i)?.hi ?? 100, Y, 3),
     h('line.even', { x1: L, y1: B, x2: R, y2: T }), h('path.line', { d: linePath(xs, est.v.map(Y)) }), hline('axis', L, R, T));
   over.push(label(R + 6, T + 4, 'limit'));
 
@@ -60,9 +52,10 @@ export function windowFigure(c: Ctx, b: BucketVM, d?: DetailVM): VNode {
 
   // Projection fan from now to reset, stopping where a line meets the limit.
   const p = b.pace, rates = p ? (p.low === p.high ? [p.high] : [p.low, p.high]) : [];
+  const proj = (r: number, t: number) => min(100, v0 + (r * (t - now)) / HOUR);
   const ends = rates.map(r => {
     const hit = r > 0 ? now + ((100 - v0) / r) * HOUR : Infinity;
-    return hit < t1 ? [hit, 100] : [t1, min(100, v0 + (r * (t1 - now)) / HOUR)];
+    return hit < t1 ? [hit, 100] : [t1, proj(r, t1)];
   });
   ends.forEach(([te, ve]) => marks.push(h('path.proj', { d: `M${f1(xn)} ${f1(Y(v0))}L${f1(X(te))} ${f1(Y(ve))}` })));
   const atReset = ends.filter(e => e[0] >= t1);
@@ -77,7 +70,7 @@ export function windowFigure(c: Ctx, b: BucketVM, d?: DetailVM): VNode {
   // Labels keep off the curves: the estimate before now, the fan after.
   const curveAt = (t: number) => (t <= now
     ? (est.t.length ? [Y(est.v[nearest(est.t, t)])] : [])
-    : rates.map(r => Y(min(100, v0 + (r * (t - now)) / HOUR))));
+    : rates.map(r => Y(proj(r, t))));
   const place = (cands: [number, number, string][], w: number) => cands.find(([x, y, anchor]) => {
     const x0 = anchor === 'end' ? x - w : x, bx = { x0, y0: y - 11, x1: x0 + w, y1: y + 3 };
     const clear = bx.x0 >= L - 2 && bx.x1 <= W && bx.y0 >= T - 2 && bx.y1 <= B && !boxes.some(o => overlaps(o, bx))
@@ -91,7 +84,7 @@ export function windowFigure(c: Ctx, b: BucketVM, d?: DetailVM): VNode {
     const tr = p.runOut.mid <= t1 ? p.runOut.mid : p.runOut.from, x = X(tr), y = Y(100);
     over.push(h('path.warnd', { d: `M${f1(x)} ${f1(y - 4)}l4 4-4 4-4-4z` }));
     const s = `100% ~${clock(runOutClock(b.key, tr), now, fmt)}`, w = textW(s, 12) + 16;
-    const at = place([[x + 8, y + 18, 'start'], [x - 8, y + 18, 'end'], [x - 8, y + 34, 'end'], [x + 8, y + 34, 'start'], [x - 8, y + 50, 'end']], w);
+    const at = place([[x + 8, y + 18, 'start'], [x - 8, y + 18, 'end'], [x + 8, y + 34, 'start'], [x - 8, y + 34, 'end']], w);
     if (at) {
       const x0 = at[2] === 'end' ? at[0] - w : at[0];
       over.push(icon('warning', 'wi', [x0, at[1] - 10, 12]), label(x0 + 16, at[1], s, 'val'));
@@ -105,7 +98,7 @@ export function windowFigure(c: Ctx, b: BucketVM, d?: DetailVM): VNode {
     if (at) over.push(h('text.val.halo', { x: f1(at[0]), y: f1(at[1]), 'text-anchor': at[2] }, s, h('tspan.pmt', ps)));
   }
 
-  const ev = place([0.86, 0.72, 0.3, 0.18].flatMap(f => {
+  const ev = place([0.86, 0.3].flatMap(f => {
     const x = L + f * (R - L), y = B - f * (B - T);
     return [[x + 6, y + 14, 'start'], [x - 6, y - 6, 'end']] as [number, number, string][];
   }), textW('even use', 11));
@@ -115,7 +108,7 @@ export function windowFigure(c: Ctx, b: BucketVM, d?: DetailVM): VNode {
   parts.legend.push(['lane', 'Official whole number'], ['even', 'Even use']);
   if (p) parts.legend.push(['dash', p.low === p.high ? 'Projection at your average pace' : 'Projection: 15-minute pace (this computer) to window average (every device)']);
   parts.caps.push(!ws ? '' : ws.calibrated
-    ? 'Ribbons: ±1σ and ±2σ. They widen going back from now, as the reconstruction counts further.'
+    ? 'Ribbons: ±1σ and ±2σ, widening back from now as the reconstruction counts further.'
     : 'Official whole numbers only for now: the estimate appears once calibrated.');
   return figure(c, plot, { ...parts, tip: tooltip(c, b, d, X, Y, now, days, rates), table: () => winTable(c, b, d, days) });
 }

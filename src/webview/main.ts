@@ -84,7 +84,7 @@ function paint() {
     }
     failed = false;
   } catch (e) {
-    if (!failed) post({ type: 'error', message: String(e instanceof Error ? `${e.message}\n${e.stack ?? ''}` : e).slice(0, 2000) });
+    if (!failed) post({ type: 'error', message: String((e as Error)?.stack ?? e).slice(0, 2000) });
     failed = true;
     root.replaceChildren();
     patch(root, [h('div.failed', { role: 'alert' }, h('p', 'Something went wrong drawing this view.'),
@@ -128,7 +128,7 @@ window.addEventListener('message', (e: MessageEvent) => {
   schedule();
 });
 
-new ResizeObserver(() => { if (measure()) schedule(); }).observe(root);
+new ResizeObserver(schedule).observe(root);   // paint() measures and redraws the charts to fit
 // VS Code toggles body classes for theme, reduced motion and screen-reader mode.
 new MutationObserver(schedule).observe(document.body, { attributes: true, attributeFilter: ['class'] });
 setInterval(schedule, 15_000);   // keeps "read 40 s ago" current; patch() rewrites only that text

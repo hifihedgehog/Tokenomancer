@@ -32,18 +32,14 @@ export const family = (f: Family) => f.charAt(0).toUpperCase() + f.slice(1);
 export const WAITING = 'Waiting for the first reading.';
 export const BETWEEN = 'Between the whole numbers';
 export const TWO_TICKS = 'Waiting for two whole-number ticks while you use Claude Code here.';
+export const ONE_TICK = '1 of 2 ticks seen; the next one while you use Claude Code here completes calibration.';
 
 export const PART = { in: 'Fresh input & cache writes', out: 'Output', read: 'Cache reads' };
 
-/** "in ~5 min", "in 23–27 min", "in 1.2–1.6 h" from two offsets in ms. */
+/** "in ~5 min", "in 23–27 min" from two offsets in ms. */
 export function etaRange(fromMs: number, toMs: number): string {
-  const a = max(0, fromMs) / 60_000, b = max(0, toMs) / 60_000;
-  if (b < 90) {
-    const ra = max(1, round(a)), rb = max(1, round(b));
-    return ra === rb ? `in ~${max(1, round((a + b) / 2))} min` : `in ${ra}–${rb} min`;
-  }
-  const ha = (a / 60).toFixed(1), hb = (b / 60).toFixed(1);
-  return ha === hb ? `in ~${ha} h` : `in ${ha}–${hb} h`;
+  const a = max(1, round(fromMs / 60_000)), b = max(1, round(toMs / 60_000));
+  return a === b ? `in ~${a} min` : `in ${a}–${b} min`;
 }
 
 // ───────────── local time (the VM's time zone, which may differ from the webview's) ─────────────
@@ -73,10 +69,12 @@ export function zoneOffset(t: number, tz?: string): number {
 export function localBoundaries(from: number, to: number, stepMin: number, tz?: string): number[] {
   const out: number[] = [], step = stepMin * 60_000;
   for (let t = from, guard = 0; guard < 500 && t < to; guard++) {
+    // The next local boundary at today's offset; if the offset changes before it, the wall clock
+    // there is off by the change, unless it lands on a boundary anyway (the repeated hour).
     const off = zoneOffset(t, tz), b = floor((t + off) / step) * step + step;
     let tb = b - off;
     const off2 = zoneOffset(tb, tz);
-    if (off2 !== off) tb = b - off2;
+    if ((tb + off2) % step) tb = b - off2;
     if (tb <= t) { t += step; continue; }
     if (tb > to) break;
     out.push(tb);

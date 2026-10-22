@@ -40,7 +40,7 @@ export function header(c: Ctx): VNode {
     freshness(c),
     panel && h('div.tools', { role: 'toolbar', 'aria-label': 'Usage actions' }, TOOLS.map(([ic, label, cmd]) => {
       const busy = cmd === 'refresh' && (c.busy || c.vm.fresh.refreshing);
-      return h('button.ib', { 'aria-label': label, title: label, disabled: busy, 'aria-busy': busy ? 'true' : null, onclick: () => c.run(cmd) }, icon(ic));
+      return h('button.ib', { title: label, disabled: busy, 'aria-busy': busy ? 'true' : null, onclick: () => c.run(cmd) }, icon(ic));
     })));
 }
 
@@ -54,7 +54,8 @@ export function banners(c: Ctx): Child[] {
   if (vm.sample) out.push(banner('beaker', ['Sample data — not your account.'], button('Exit', 'exitSampleData', c, 'link'), true));
   const lines = vm.reasons.length ? vm.reasons : vm.fresh.reason ? [vm.fresh.reason] : [];
   const act = NOTICE[st];
-  if (act !== undefined && lines.length) out.push(banner(act ? 'warning' : 'info', lines, act && button(act[0], act[1], c, 'link'), !act));
+  // The one notice without an action is an expired sign-in, which renews itself: a refresh, not a warning.
+  if (act !== undefined && lines.length) out.push(banner(act ? 'warning' : 'refresh', lines, act && button(act[0], act[1], c, 'link'), !act));
   return out;
 }
 
@@ -66,29 +67,17 @@ function banner(ic: IconName, lines: string[], act: Child, info = false): VNode 
 
 export function headline(c: Ctx): VNode {
   const { strong, rest, tone } = c.vm.headline;
-  const sep = rest && !/^\s*[—–\-·,.:;]/.test(rest) ? ' — ' : ' ';
-  return h('p.headline', { class: tone, tabindex: 0 },
-    tone !== 'neutral' && alertIcon(tone === 'crit'),
-    h('span', h('b', strong), rest ? sep + rest.trim() : ''));
+  return h('p.headline', { class: tone, tabindex: 0 }, tone !== 'neutral' && alertIcon(tone === 'crit'), h('span', h('b', strong), rest && ` — ${rest}`));
 }
 
 // ───────────────────────────── cards ─────────────────────────────
 
 export const chip = (b: Pick<BucketVM, 'rune' | 'text'>) => h('span.chip', { title: b.text.stateTip }, rune(b.rune, 10), b.text.state);
 
-const dividers = new Map<string, number[]>();
 /** Local hours (5-hour) or midnights (weekly) inside the window, as fractions of it. */
 function calendar(b: BucketVM, tz?: string): number[] {
   const s = b.windowStart, w = b.windowMs;
-  if (!s || !w) return [];
-  const key = `${s}:${w}:${tz}`;
-  let out = dividers.get(key);
-  if (!out) {
-    out = localBoundaries(s, s + w - 60_000, w > 86_400_000 ? 1440 : 60, tz).map(t => (t - s) / w);
-    if (dividers.size > 20) dividers.clear();
-    dividers.set(key, out);
-  }
-  return out;
+  return s && w ? localBoundaries(s, s + w - 60_000, w > 86_400_000 ? 1440 : 60, tz).map(t => (t - s) / w) : [];
 }
 
 function meter(b: BucketVM, W: number, tz?: string): VNode {
@@ -139,7 +128,7 @@ function card(c: Ctx, b: BucketVM, i: number, many: boolean): VNode {
     onclick: () => c.select(b.key), onkeydown: (e: KeyboardEvent) => cardKey(c, e, b.key),
   },
     h('div.row1', h('span.label', b.long), chip(b),
-      b.binding && many && h('span.chip.bind', { title: 'The status bar leads with this limit: it binds first.' }, 'binds first')),
+      b.binding && many && h('span.chip.bind', { title: 'The status bar leads with this limit.' }, 'binds first')),
     h('div.value', h('span.big', b.text.value), b.text.pm && h('span.pm', b.text.pm)),
     h('div.mw', { 'data-w': i ? null : 'card' }, meter(b, c.w('card', 240), c.vm.fmt.timeZone)),
     b.loupe.mode === 'none' ? h('div.loupe.none') : h('div.loupe', { title: b.text.caption },

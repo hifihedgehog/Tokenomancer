@@ -17,12 +17,11 @@ export function app(c: Ctx, said: string): Child[] {
   const vm = c.vm, out: Child[] = [
     h('svg.defs', { width: 0, height: 0 },
       h('pattern', { id: 'tk-hatch', width: 3, height: 3, patternUnits: 'userSpaceOnUse', patternTransform: 'rotate(45)' }, rect('hatch', 0, 0, 1, 3))),
-    h('div.sr', { role: 'status', 'aria-live': 'polite' }, said),
+    h('div.sr', { role: 'status' }, said),
     header(c), banners(c),
   ];
   if (!vm.buckets.length && vm.fresh.state === 'signed-out') return [...out, signedOut(c), h('div.solo', local(vm.local), footer(c))];
   out.push(headline(c), cards(c), c.sel ? detail(c, c.sel, vm.buckets.indexOf(c.sel)) : local(vm.local));
   if (c.surface === 'view') out.push(h('button.btn.open', { onclick: () => c.run('openDashboard') }, 'Open dashboard'));
-  if (vm.now) out.push(footer(c));
-  return out;
+  return [...out, footer(c)];
 }

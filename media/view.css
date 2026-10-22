@@ -1,5 +1,4 @@
-/* One accent for data marks, neutrals for the rest, status hues only for status (always with an
-   icon and a word), texture only in high contrast, no motion. */
+/* One accent for data, neutrals elsewhere; status hues only for status, with an icon and a word. */
 :root{
 --fg:var(--vscode-foreground);--muted:var(--vscode-descriptionForeground);
 --accent:var(--vscode-tokenomancer-accent,#8b6cf0);
@@ -50,7 +49,7 @@ code{overflow-wrap:anywhere}
 .ib:active,.tbtn[aria-pressed=true]{background:var(--active)}
 .ib:disabled{opacity:.45;cursor:default;background:none}
 .ic{width:16px;height:16px;fill:currentColor}
-.chip{gap:4px;height:18px;padding:0 6px;box-sizing:border-box;border:1px solid var(--vscode-widget-border,var(--axis));border-radius:9px}
+.chip{gap:4px;height:18px;padding:0 6px;box-sizing:border-box;border:1px solid var(--axis);border-radius:9px}
 .chip .ic,.verdict .ic{width:12px;height:12px}
 .rune{fill:currentColor}
 .wi,.endcap,.fill.warn{fill:var(--warn)}.ci,.fill.crit{fill:var(--crit)}
@@ -61,7 +60,7 @@ code{overflow-wrap:anywhere}
 .btn2:hover{background:var(--vscode-button-secondaryHoverBackground,var(--vscode-button-secondaryBackground))}
 .link{color:var(--vscode-textLink-foreground)}
 .link:hover{text-decoration:underline}
-.open{display:block;width:100%;margin:16px 0 4px}
+.open{width:100%;margin:16px 0 4px}
 .banner{display:flex;gap:8px;margin-bottom:12px;padding:8px 12px;border-left:3px solid var(--warn);border-radius:0 4px 4px 0;background:color-mix(in srgb,var(--warn) 9%,#0000)}
 .banner.info{border-left-color:var(--muted);background:var(--card)}
 .btext{display:grid;gap:4px;min-width:0;overflow-wrap:anywhere}
@@ -84,7 +83,7 @@ code{overflow-wrap:anywhere}
 .verdict{gap:4px;min-width:0}
 [data-surface=view]{& main{padding:8px 12px 12px}.head{min-height:20px;margin-bottom:8px}.headline{margin-bottom:12px}
 .headline span{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.cards{grid-template-columns:1fr;gap:8px;margin-bottom:16px}.card{padding:10px}.facts{margin-top:12px}.foot{margin-top:12px}}
+.cards{grid-template-columns:1fr;gap:8px;margin-bottom:16px}.card{padding:10px}.detail{gap:12px}.disc{margin:0}.foot{margin-top:12px}}
 .track{fill:var(--track)}
 .fill,.chev{fill:var(--accent)}
 .ghost,.flat{fill:var(--ghost)}
@@ -106,7 +105,7 @@ code{overflow-wrap:anywhere}
 .ledge,.klane{stroke:var(--ledge)}.ledge{fill:none}
 .line,.proj{fill:none;stroke:var(--accent);stroke-width:2;stroke-linejoin:round;stroke-linecap:round}
 .proj{stroke-width:1.5;stroke-dasharray:4 3}
-.even,.leader{stroke:var(--i30)}
+.even{stroke:var(--i30)}
 .now,.rug,.cross{stroke:var(--ledge)}
 .dotm{fill:var(--accent);stroke:var(--bg);stroke-width:2}
 .warnd,.acd{fill:var(--bg);stroke:var(--warn);stroke-width:1.5}
@@ -170,7 +169,7 @@ figcaption{display:grid;gap:4px;margin-top:6px}
 .foot{display:grid;gap:2px;margin-top:24px}
 /* High contrast (HC Light too): outlines and the 45° hatch instead of tints */
 .vscode-high-contrast{--card:#0000;--card-h:#0000;--card-sel:#0000;--track:#0000;--band1:#0000;--band2:#0000;--ghost:#0000;--lane:#0000;--hover:#0000;--active:#0000;--ledge:var(--fg);
-.card{border:1px solid var(--hcb)}
+.card,.chip{border:1px solid var(--hcb)}
 .card[aria-selected=true]{outline:2px solid var(--hca);outline-offset:-2px}
 :is(.card,.ib,.tbtn,.disc):hover{outline:1px dashed var(--hca);outline-offset:-1px}
 :focus-visible,.tbtn[aria-pressed=true]{outline:1px solid var(--hca)}
