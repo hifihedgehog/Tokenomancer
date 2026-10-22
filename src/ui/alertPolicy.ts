@@ -13,6 +13,9 @@ const CONFIDENT = new Set(['pinned', 'exact', 'counted']);
 export interface AlertOptions { mode: 'runOut' | 'runOutAndLimit' | 'off'; leadMinutes: number; focused: boolean; activatedAt: number }
 export interface Alert { id: string /* key@windowStart:kind */; message: string; key: string }
 
+/** "28 min" in prose; longer spans as the compact "1h 12m", "1d 19h". */
+const prose = (ms: number) => (ms < 59.5 * MIN ? `${Math.max(1, Math.round(ms / MIN))} min` : span(ms));
+
 /** "5-hour", "weekly", "Fable weekly". */
 const nameOf = (b: BucketVM) => b.spokenLabel.replace('five-hour', '5-hour');
 
@@ -27,13 +30,13 @@ function runOutMessage(b: BucketVM, now: number, vm: ViewModel): string {
   const R = b.resetsAt!;
   const at = (t: number) => clock(t, now, vm.fmt);
   const how = b.key.startsWith('seven_day') ? 'at your average pace this week' : 'at this pace';
-  const lead = R - mid < 5 * MIN ? `around when it resets at ${at(R)}` : `${span(R - mid)} before it resets at ${at(R)}`;
-  return `Claude ${nameOf(b)} limit: ${how} you'll reach 100% around ${at(mid)} (in ${span(mid - now)}), ${lead}.`;
+  const before = R - mid < 5 * MIN ? `around when it resets at ${at(R)}` : `${prose(R - mid)} before it resets at ${at(R)}`;
+  return `Claude ${nameOf(b)} limit: ${how} you'll reach 100% around ${at(mid)} (in ${prose(mid - now)}), ${before}.`;
 }
 
 function limitMessage(b: BucketVM, now: number, vm: ViewModel): string {
   const R = b.resetsAt;
-  const when = R !== undefined && R > now ? ` It resets at ${clock(R, now, vm.fmt)} (in ${span(R - now)}).` : '';
+  const when = R !== undefined && R > now ? ` It resets at ${clock(R, now, vm.fmt)} (in ${prose(R - now)}).` : '';
   return `Claude ${nameOf(b)} limit reached.${when}`;
 }
 

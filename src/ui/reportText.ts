@@ -51,7 +51,7 @@ function fenced(lang: string, s: string): string {
 
 const SECRET_KEY = /token|secret|auth|cookie|password|credential|api[-_]?key/i;
 const BUCKET_KEY = /^(five_hour|seven_day)/;          // "seven_day_oauth_apps" is a limit, not a secret
-const SECRET_VALUE = /^(sk-ant-|eyJ)|^[A-Za-z0-9+/_=-]{40,}$/;
+const SECRET_VALUE = /^(sk-ant-|eyJ|Bearer )|^[A-Za-z0-9+/_.=-]{40,}$/;
 
 /** A copy with anything credential-like removed: keys named like secrets, and values shaped like tokens. */
 export function redact(x: unknown, depth = 0): unknown {
@@ -95,11 +95,10 @@ function featureName(f: string): string {
   return `${FAMILY[fam] ?? fam} ${PART[part] ?? part ?? ''}`.trim();
 }
 
-/** What a learned factor means, honestly: relative to the user's own mix, not absolute (critique P1-16). */
+/** A learned factor against API price ratios: "+11%", "−7%", "in line". */
 function factorMeaning(g: number): string {
   const p = Math.round((g - 1) * 100);
-  if (p === 0) return 'in line with API price ratios, relative to the rest of your mix';
-  return `weighs ${Math.abs(p)}% ${p > 0 ? 'more' : 'less'} than API price ratios predict, relative to the rest of your mix`;
+  return p === 0 ? 'in line' : `${p > 0 ? '+' : '−'}${Math.abs(p)}%`;
 }
 
 // ───────────────────────────── sections ─────────────────────────────
@@ -122,7 +121,11 @@ function limits(r: ReportInput, list: BucketVM[], inputs: Map<string, In>): stri
       spread !== undefined ? `±${Math.round(spread * 100)}%` : '—',
     ]));
   }
-  for (const b of list) out.push('', `- **${b.long}** · ${b.text.stateTip} ${b.text.caption}.`);
+  // One line per distinct explanation, so three pinned limits don't repeat the same sentence.
+  const tips = new Map<string, string[]>();
+  for (const b of list) tips.set(b.text.stateTip, [...(tips.get(b.text.stateTip) ?? []), b.long]);
+  out.push('');
+  for (const [tip, names] of tips) out.push(`- **${names.join(', ')}**: ${tip}`);
   if (vm.extras.length) out.push('', `No time window: ${vm.extras.map(x => `${x.label} ${x.text}`).join(' · ')}.`);
   for (const n of vm.notes) out.push('', `> ${n}`);
   return out;
@@ -147,7 +150,9 @@ function pace(r: ReportInput, list: BucketVM[]): string[] {
 }
 
 function calibration(r: ReportInput, list: BucketVM[], inputs: Map<string, In>): string[] {
-  const out = ['## Calibration', ''];
+  // Factors are relative to the user's own mix, not absolute (critique P1-16), so the report says so once.
+  const out = ['## Calibration', '', 'Factors say how much more or less each kind of token counts than API price ratios predict, '
+    + 'relative to the rest of your mix; 1% ≈ is the API-equivalent cost of one point.', ''];
   for (const b of list) {
     const i = inputs.get(b.key);
     const samples = i?.samples ?? b.calib.samples;
@@ -158,7 +163,7 @@ function calibration(r: ReportInput, list: BucketVM[], inputs: Map<string, In>):
       + `${b.calib.spread !== undefined ? ` · model error ±${Math.round(b.calib.spread * 100)}% per point` : ''}`, '');
     const corr = (i?.corrections ?? []).filter(([, g]) => isFinite(g));
     if (corr.length) {
-      out.push(row(['Feature', 'Factor', 'Meaning']), '|---|---:|---|');
+      out.push(row(['Tokens', 'Factor', 'vs API price ratios']), '|---|---:|---:|');
       for (const [f, g] of corr) out.push(row([featureName(f), `×${g.toFixed(2)}`, factorMeaning(g)]));
       out.push('');
     }

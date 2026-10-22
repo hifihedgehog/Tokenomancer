@@ -32,9 +32,10 @@ function bucketItem(b: BucketVM, vm: ViewModel): GlanceItem {
   const t = b.text;
   const value = b.state === 'reset' ? 'new window' : `${t.value}${t.pm ? ` ${t.pm}` : ''}`;
   const official = t.official !== t.value && b.state !== 'reset' && b.state !== 'idle' ? ` · official ${t.official}` : '';
-  // A withheld verdict is the pace sentence; a limit's verdict already says when it resets.
+  // A withheld verdict is the pace sentence; a limit's verdict already says when it resets, and
+  // "lands ~56% by 15:06" already names the reset clock.
   const resets = b.verdict === 'limited' ? ''
-    : t.resetsIn ? `resets ${t.resetsAt} (in ${t.resetsIn})`
+    : t.resetsIn ? (t.resetsAt && t.verdict.endsWith(`by ${t.resetsAt}`) ? `resets in ${t.resetsIn}` : `resets ${t.resetsAt} (in ${t.resetsIn})`)
     : t.resetsAt ? `reset at ${t.resetsAt}` : '';
   const detail = [t.verdict, resets, t.pace !== t.verdict ? t.pace : ''].filter(Boolean).join(' · ');
   return {

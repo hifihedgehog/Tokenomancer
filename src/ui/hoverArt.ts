@@ -32,6 +32,9 @@ const f = (x: number) => String(Math.round(x * 100) / 100);
 const rect = (x: number, y: number, w: number, h: number, attrs: string) =>
   w > 0 && h > 0 ? `<rect x="${f(x)}" y="${f(y)}" width="${f(w)}" height="${f(h)}" ${attrs}/>` : '';
 const fill = (c: string, o = 1) => (o < 1 ? `fill="${c}" fill-opacity="${o}"` : `fill="${c}"`);
+/** Many same-coloured rectangles as one path: a fraction of the bytes of a <rect> each. */
+const bars = (rs: [number, number, number, number][], attrs: string) =>
+  rs.length ? `<path d="${rs.map(([x, y, w, h]) => `M${f(x)} ${f(y)}h${f(w)}v${f(h)}h${f(-w)}z`).join('')}" ${attrs}/>` : '';
 
 /** A 45° hatch of 1 px lines every 3 px, so a projection or a loose band reads without colour. */
 const hatch = (id: string, c: string, o = 1) =>
@@ -98,6 +101,8 @@ function loupeBody(l: LoupeVM, theme: ThemeKind, p: Palette, W: number, H: numbe
   const range = Math.max(1e-9, l.to - l.from);
   const x = (v: number) => 1 + (298 * (Math.min(l.to, Math.max(l.from, v)) - l.from)) / range;
   const px = (v: number) => Math.round(x(v));
+  // A w-pixel-wide mark centred on v, on whole pixels so a 1 px stave doesn't blur across two.
+  const at = (v: number, w: number) => Math.min(W - w, Math.max(0, px(v) - Math.floor(w / 2)));
   const back: string[] = [], scale: string[] = [], front: string[] = [];
   const hatched = 'fill="url(#h)"';
   const band = (b: [number, number] | undefined, y: number, h: number, attrs: string) => {
@@ -127,22 +132,23 @@ function loupeBody(l: LoupeVM, theme: ThemeKind, p: Palette, W: number, H: numbe
   }
 
   scale.push(rect(2, 7.5, 296, 1, fill(p.ink, 0.25)));
+  const ticks: [number, number, number, number][] = [];
   const tenths = Math.round(range * 10);
   for (let i = 1; i < tenths; i++) {
     const v = l.from + i / 10;
     if (l.edges.some(e => Math.abs(e - v) < 1e-6)) continue;
     const centre = i % 10 === 5;
-    scale.push(rect(px(v), centre ? 4 : 6, 1, centre ? 8 : 4, fill(p.ink, 0.35)));
+    ticks.push([px(v), centre ? 4 : 6, 1, centre ? 8 : 4]);
   }
-  for (const e of l.edges) {
-    const end = Math.abs(e - l.from) < 1e-6 || Math.abs(e - l.to) < 1e-6;
-    const w = end ? 2 : 1;
-    scale.push(rect(Math.min(W - w, Math.max(0, px(e) - w / 2)), 0, w, H, fill(p.ink, 0.85)));
-  }
+  scale.push(bars(ticks, fill(p.ink, 0.35)));
+  scale.push(bars(l.edges.map(e => {
+    const w = Math.abs(e - l.from) < 1e-6 || Math.abs(e - l.to) < 1e-6 ? 2 : 1;
+    return [at(e, w), 0, w, H];
+  }), fill(p.ink, 0.85)));
 
   if (l.tick !== undefined && (l.mode === 'graded' || l.mode === 'flat')) {
     const w = l.mode === 'flat' ? 1 : 2;
-    front.push(rect(Math.min(W - w, Math.max(0, px(l.tick) - w / 2)), 0, w, H, fill(p.ink, l.mode === 'flat' ? 0.7 : 1)));
+    front.push(rect(at(l.tick, w), 0, w, H, fill(p.ink, l.mode === 'flat' ? 0.7 : 1)));
   }
   // Chevrons say the band carries on past the drawn range ("at least" for stale).
   const chevron = (right: boolean) => right
