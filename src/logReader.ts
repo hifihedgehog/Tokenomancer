@@ -12,6 +12,7 @@ export interface UsageEvent {
   wu: number; // weighted units (API-equivalent USD) added by this event
   parts: [number, number, number]; // wu split: [fresh input + cache writes, output, cache reads]
   tokens: TokenUsage; // tokens added by this event
+  first?: boolean; // the request's first event (later ones are its streamed or resumed lines); absent = unknown
 }
 
 const ZERO: TokenUsage = { input: 0, output: 0, cacheWrite5m: 0, cacheWrite1h: 0, cacheRead: 0 };
@@ -63,7 +64,7 @@ function maxUsage(a: TokenUsage, b: TokenUsage): TokenUsage {
  * only count the increase over what was already seen.
  */
 export class EventParser {
-  private seen = new Map<string, { usage: TokenUsage; t: number }>();
+  private seen = new Map<string, { usage: TokenUsage; t: number; counted: boolean }>();
 
   constructor(private overrides: () => Record<string, Partial<Price>> = () => ({})) {}
 
@@ -85,14 +86,16 @@ export class EventParser {
     const prev = this.seen.get(key);
     const prevUsage = prev?.usage ?? ZERO;
     const delta = subtract(tokens, prevUsage);
-    this.seen.set(key, { usage: maxUsage(tokens, prevUsage), t: prev?.t ?? t });
+    const any = delta.input + delta.output + delta.cacheRead + delta.cacheWrite5m + delta.cacheWrite1h;
+    // A request counts once, on its first line that adds anything (a leading all-zero line doesn't).
+    const first = !prev?.counted;
+    this.seen.set(key, { usage: maxUsage(tokens, prevUsage), t: prev?.t ?? t, counted: !first || any > 0 });
+    if (any === 0) return null;
 
     const ov = this.overrides();
     const parts = costParts(model, delta, ov);
     const wu = parts[0] + parts[1] + parts[2];
-    const any = delta.input + delta.output + delta.cacheRead + delta.cacheWrite5m + delta.cacheWrite1h;
-    if (any === 0) return null;
-    return { t, model, family: parseModel(model).family, wu, parts, tokens: delta };
+    return { t, model, family: parseModel(model).family, wu, parts, tokens: delta, first };
   }
 
   prune(before: number) {
@@ -100,15 +103,30 @@ export class EventParser {
   }
 }
 
-interface FileCursor { offset: number; mtimeMs: number }
+interface FileCursor { offset: number; mtimeMs: number; skip?: boolean } // skip: discarding an over-long line to its end
+
+export interface TailOptions {
+  chunkBytes?: number;    // read size (default 4 MB); a longer line grows the read until its newline
+  maxLineBytes?: number;  // longer lines are skipped unparsed (default 64 MB; base64 screenshots get big)
+  log?: (msg: string) => void;
+}
+
+// Every usage line carries this key; lines without it (tool results, screenshots) are never decoded.
+const USAGE = Buffer.from('"usage"');
 
 /** Walks the projects folder and reads only bytes appended since the last scan. */
 export class LogTailer {
   private cursors = new Map<string, FileCursor>();
+  private failing = new Set<string>(); // files whose last read failed, so each failure is logged once
   readonly parser: EventParser;
+  private readonly chunkBytes: number;
+  private readonly maxLineBytes: number;
 
-  constructor(private projectsDir: () => string, private horizonMs: number, overrides?: () => Record<string, Partial<Price>>) {
+  constructor(private projectsDir: () => string, private horizonMs: number, overrides?: () => Record<string, Partial<Price>>,
+    private readonly opts: TailOptions = {}) {
     this.parser = new EventParser(overrides);
+    this.chunkBytes = Math.max(64, opts.chunkBytes ?? 4 << 20);
+    this.maxLineBytes = Math.max(this.chunkBytes, opts.maxLineBytes ?? 64 << 20);
   }
 
   private listFiles(dir: string, out: string[], depth = 0) {
@@ -122,7 +140,7 @@ export class LogTailer {
     }
   }
 
-  /** Returns new events since the previous call. */
+  /** Returns new events since the previous call. A file that can't be read never costs another file's events. */
   scan(now = Date.now()): UsageEvent[] {
     const files: string[] = [];
     this.listFiles(this.projectsDir(), files);
@@ -131,42 +149,81 @@ export class LogTailer {
 
     for (const file of files) {
       let st: fs.Stats;
-      try { st = fs.statSync(file); } catch { continue; }
-      let cur = this.cursors.get(file);
-      if (!cur) {
-        if (st.mtimeMs < cutoff) { // too old to matter; remember it so we skip cheaply
-          this.cursors.set(file, { offset: st.size, mtimeMs: st.mtimeMs });
-          continue;
-        }
-        cur = { offset: 0, mtimeMs: 0 };
-        this.cursors.set(file, cur);
-      }
-      if (st.size < cur.offset) { cur.offset = 0; } // truncated or replaced
-      if (st.size === cur.offset) { cur.mtimeMs = st.mtimeMs; continue; }
-
-      let buf: Buffer;
+      try { st = fs.statSync(file); } catch { continue; } // gone since the listing
       try {
-        const fd = fs.openSync(file, 'r');
-        try {
-          const len = st.size - cur.offset;
-          buf = Buffer.alloc(len);
-          fs.readSync(fd, buf, 0, len, cur.offset);
-        } finally { fs.closeSync(fd); }
-      } catch { continue; }
-
-      // Only consume complete lines; a half-written last line is re-read next time.
-      // Splitting on the newline byte (not after decoding) keeps multi-byte characters intact.
-      const lastNl = buf.lastIndexOf(0x0a);
-      cur.mtimeMs = st.mtimeMs;
-      if (lastNl < 0) continue;
-      cur.offset += lastNl + 1;
-      const lines = buf.subarray(0, lastNl).toString('utf8').split('\n');
-      for (const line of lines) {
-        const ev = this.parser.parseLine(line.trim());
-        if (ev && ev.t >= cutoff) events.push(ev);
+        this.scanFile(file, st, cutoff, events);
+        this.failing.delete(file);
+      } catch (e: any) {
+        // The cursor stays after the last parsed chunk, so the rest is retried on the next scan.
+        if (!this.failing.has(file)) this.opts.log?.(`Couldn't read ${file}: ${e?.message ?? e}`);
+        this.failing.add(file);
       }
     }
     this.parser.prune(cutoff);
     return events;
+  }
+
+  private scanFile(file: string, st: fs.Stats, cutoff: number, out: UsageEvent[]) {
+    let cur = this.cursors.get(file);
+    if (!cur) {
+      if (st.mtimeMs < cutoff) { // too old to matter; remember it so we skip cheaply
+        this.cursors.set(file, { offset: st.size, mtimeMs: st.mtimeMs });
+        return;
+      }
+      cur = { offset: 0, mtimeMs: 0 };
+      this.cursors.set(file, cur);
+    }
+    if (st.size < cur.offset) { cur.offset = 0; cur.skip = false; } // truncated or replaced
+    cur.mtimeMs = st.mtimeMs;
+    if (st.size === cur.offset) return;
+    const fd = fs.openSync(file, 'r');
+    try { this.readLines(fd, file, cur, st.size, cutoff, out); } finally { fs.closeSync(fd); }
+  }
+
+  /**
+   * Parses the complete lines between the cursor and `size` a chunk at a time, moving the cursor
+   * only past what was parsed. A half-written last line is left for the next scan. Splitting on
+   * the newline byte (not after decoding) keeps multi-byte characters intact.
+   */
+  private readLines(fd: number, file: string, cur: FileCursor, size: number, cutoff: number, out: UsageEvent[]) {
+    let want = this.chunkBytes;
+    while (cur.offset < size) {
+      const len = Math.min(want, size - cur.offset);
+      const buf = Buffer.allocUnsafe(len);
+      const n = fs.readSync(fd, buf, 0, len, cur.offset);
+      if (n <= 0) return;
+      const chunk = n < len ? buf.subarray(0, n) : buf;
+      if (cur.skip) {
+        const nl = chunk.indexOf(0x0a);
+        cur.offset += nl < 0 ? n : nl + 1;
+        if (nl >= 0) cur.skip = false;
+        continue;
+      }
+      const nl = chunk.lastIndexOf(0x0a);
+      if (nl >= 0) {
+        this.parseChunk(chunk, nl, cutoff, out);
+        cur.offset += nl + 1;
+        want = this.chunkBytes;
+      } else if (cur.offset + n >= size) {
+        return;
+      } else if (n >= this.maxLineBytes) {
+        this.opts.log?.(`Skipped a log line over ${Math.round(this.maxLineBytes / 1048576)} MB in ${file}.`);
+        cur.offset += n;
+        cur.skip = true;
+      } else {
+        want = Math.min(this.maxLineBytes, want * 2); // one line is longer than the chunk: read more of it at once
+      }
+    }
+  }
+
+  /** Parses the lines in buf[0, end) that mention "usage", jumping straight from one to the next. */
+  private parseChunk(buf: Buffer, end: number, cutoff: number, out: UsageEvent[]) {
+    for (let h = buf.indexOf(USAGE); h >= 0 && h < end;) {
+      const ls = buf.lastIndexOf(0x0a, h) + 1;
+      const le = buf.indexOf(0x0a, h);
+      const ev = this.parser.parseLine(buf.toString('utf8', ls, le).trim());
+      if (ev && ev.t >= cutoff) out.push(ev);
+      h = buf.indexOf(USAGE, le + 1);
+    }
   }
 }
