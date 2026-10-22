@@ -410,8 +410,10 @@ test('a full build over real Estimates from the sample data fills every field', 
   const vm = builder.build(input(buckets));
   assert.deepEqual(vm.shown, ['five_hour', 'seven_day', 'seven_day_fable']);
   assert.equal(vm.seq, 7);
-  for (const b of vm.buckets) {
-    assert.equal(b.state, 'pinned');
+  assert.deepEqual(vm.buckets.map(b => [b.key, b.state, b.verdict, b.attention]), [
+    ['five_hour', 'pinned', 'runsOut', 1], ['seven_day', 'pinned', 'steady', 0], ['seven_day_fable', 'counted', 'steady', 0]]);
+  assert.match(vm.buckets.find(b => b.key === 'seven_day_fable')!.text.value, /^~\d+\.\d%$/);
+  for (const b of vm.buckets.filter(x => x.state === 'pinned')) {
     assert.match(b.text.value, /^\d+\.\d+%$/);
     assert.match(b.text.pm!, /^±\d/);
     assert.match(b.text.caption, /^Pinned between official ticks · bounds \d+\.\d\d–\d+\.\d\d%$/);

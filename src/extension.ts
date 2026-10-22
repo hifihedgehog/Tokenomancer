@@ -53,7 +53,7 @@ class Tokenomancer implements vscode.Disposable {
 
   constructor(private readonly ctx: vscode.ExtensionContext) {
     this.shared = path.join(ctx.globalStorageUri.fsPath, 'shared');
-    const tailer = new LogTailer(() => path.join(this.cfg.dir, 'projects'), HORIZON_MS, () => this.cfg.overrides);
+    const tailer = new LogTailer(() => path.join(this.cfg.dir, 'projects'), HORIZON_MS, () => this.cfg.overrides, { log: m => this.log.warn(m) });
     this.real = new Model({ tailer, clock: Date.now, sample: false });
     this.restore();
 
@@ -65,7 +65,7 @@ class Tokenomancer implements vscode.Disposable {
     });
     this.statusBar = new StatusBar(this.cfg.alignment, this.cfg.priority);
     this.hosts = new WebviewHosts(ctx, {
-      detail: key => this.active.detail(key, this.cfg, this.polls()),
+      detail: key => this.active.detail(key, this.ui, this.polls()),
       run: c => this.run(c),
       log: m => this.log.warn(m),
     });
@@ -108,6 +108,9 @@ class Tokenomancer implements vscode.Disposable {
   }
 
   private get active(): Model { return this.sample?.model ?? this.real; }
+
+  /** The config the active model renders with: the sample scenario's readings are floored. */
+  private get ui(): Config { return this.sample ? { ...this.cfg, rounding: 'floor' } : this.cfg; }
 
   // ── state ──
 
@@ -158,8 +161,7 @@ class Tokenomancer implements vscode.Disposable {
   }
 
   private polls() {
-    if (!this.sample) return this.poller.pollLog;
-    return [];
+    return this.sample ? this.sample.demo.pollLog : this.poller.pollLog;
   }
 
   private onConfig() {
@@ -197,7 +199,7 @@ class Tokenomancer implements vscode.Disposable {
     this.lastRender = Date.now();
     let vm: ViewModel;
     try {
-      vm = this.active.viewModel(this.cfg, this.freshInput());
+      vm = this.active.viewModel(this.ui, this.freshInput());
     } catch (e: any) {
       this.log.error(`Render failed: ${e?.stack ?? e}`);
       return;
@@ -230,8 +232,8 @@ class Tokenomancer implements vscode.Disposable {
   private reportText(): string {
     const m = this.active;
     return reportMarkdown({
-      vm: this.vm ?? m.viewModel(this.cfg, this.freshInput()),
-      buckets: m.diagnostics(this.cfg.rounding),
+      vm: this.vm ?? m.viewModel(this.ui, this.freshInput()),
+      buckets: m.diagnostics(this.ui.rounding),
       raw: this.sample ? undefined : this.lastRaw,
       events: m.ledger.size,
       oldestEvent: m.ledger.firstEventTime(),
@@ -291,9 +293,18 @@ class Tokenomancer implements vscode.Disposable {
     if (this.sample) return;
     const offset = demoNow() - Date.now();
     const clock = () => Date.now() + offset;
-    const demo = new DemoSource(clock());
+    const now0 = clock();
+    const demo = new DemoSource(now0);
     const model = new Model({ events: () => demo.scan(clock()), clock, sample: true });
-    demo.bootstrap(model.ledger, model.estimators);
+    // Replay the scenario's readings, recording estimates for the last few hours so the
+    // "between the whole numbers" chart has history to draw.
+    demo.bootstrap(model.ledger, model.estimators, (t, buckets) => {
+      if (t < now0 - 6 * 3600_000) return;
+      for (const k of Object.keys(buckets)) {
+        const est = model.estimators.get(k);
+        if (est) model.history.record(k, t, est.estimate(t, model.ledger, 'floor'), true);
+      }
+    });
     const s: Sample = { model, demo, clock, timer: setInterval(() => void this.sampleTick(), this.cfg.pollMs) };
     this.sample = s;
     void this.sampleTick().then(() => this.hosts.openDashboard());
@@ -306,8 +317,8 @@ class Tokenomancer implements vscode.Disposable {
     const res = await s.demo.fetch(now);
     s.model.scan();
     const reading: Reading = { t: now, buckets: {} };
-    for (const [k, r] of res.buckets) reading.buckets[k] = { utilization: r.utilization, resets_at: r.resetsAt };
-    s.model.apply(reading, this.cfg.rounding);
+    for (const [k, r] of res.buckets) reading.buckets[k] = { utilization: r.utilization, resets_at: r.resetsAt ?? null };
+    s.model.apply(reading, 'floor'); // the scenario's readings are floored
     s.lastOkAt = now;
     this.requestRender(true);
   }
