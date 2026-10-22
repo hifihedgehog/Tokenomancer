@@ -79,7 +79,9 @@ function dateTime(t: number, fmt: TimeFmt, year: boolean): string {
 }
 
 const pct3 = (x?: number) => (x === undefined ? '—' : `${x.toFixed(3)}%`);
-const usd = (x?: number) => (x === undefined ? '—' : `$${x.toFixed(x < 10 ? 3 : 2)}`);
+const usd = (x: number) => `$${x.toFixed(2)}`;
+/** The cost of one point, which is often under a dollar: one more digit. */
+const usdPerPct = (x?: number) => (x === undefined ? '—' : `$${x.toFixed(3)}`);
 const rate = (x?: number) => (x === undefined ? '—' : `${x.toFixed(2)} %/h`);
 const ROLE: Record<ReportInput['role'], string> = {
   fetcher: 'this window reads the endpoint and shares it with other windows',
@@ -117,7 +119,7 @@ function limits(r: ReportInput, list: BucketVM[], inputs: Map<string, In>): stri
       b.long, pct3(e?.value ?? b.value), sigma !== undefined ? sigma.toFixed(3) : '—', b.text.state,
       lo !== undefined && hi !== undefined ? `${lo.toFixed(3)}–${hi.toFixed(3)}` : '—',
       `${num(b.official, 3)}%`, b.resetsAt !== undefined ? dateTime(b.resetsAt, vm.fmt, false) : '—',
-      usd(inputs.get(b.key)?.wuPerPct ?? b.calib.wuPerPct), String(inputs.get(b.key)?.samples ?? b.calib.samples),
+      usdPerPct(inputs.get(b.key)?.wuPerPct ?? b.calib.wuPerPct), String(inputs.get(b.key)?.samples ?? b.calib.samples),
       spread !== undefined ? `±${Math.round(spread * 100)}%` : '—',
     ]));
   }
@@ -159,7 +161,7 @@ function calibration(r: ReportInput, list: BucketVM[], inputs: Map<string, In>):
     const ticks = samples > 0 ? `${samples} ${samples === 1 ? 'interval' : 'intervals'} between ticks learned`
       : b.calib.armed ? 'one tick seen; decimals appear after the next' : 'waiting for two ticks while you use Claude Code here';
     const wpp = i?.wuPerPct ?? b.calib.wuPerPct;
-    out.push(`**${b.long}** · ${ticks}${wpp !== undefined ? ` · 1% ≈ ${usd(wpp)} API-equivalent` : ''}`
+    out.push(`**${b.long}** · ${ticks}${wpp !== undefined ? ` · 1% ≈ ${usdPerPct(wpp)} API-equivalent` : ''}`
       + `${b.calib.spread !== undefined ? ` · model error ±${Math.round(b.calib.spread * 100)}% per point` : ''}`, '');
     const corr = (i?.corrections ?? []).filter(([, g]) => isFinite(g));
     if (corr.length) {
@@ -175,7 +177,7 @@ function computer(r: ReportInput): string[] {
   const { vm } = r, l = vm.local;
   const out = ['## This computer', ''];
   const range = `${dateTime(l.from, vm.fmt, false)} → ${clock(l.to, vm.now, vm.fmt)}`;
-  out.push(`**${l.label}** (${range}): ${l.requests} requests · ${usd(l.usd)} API-equivalent`, '');
+  out.push(`**${l.label}** (${range}): ${l.requests.toLocaleString('en-US')} ${l.requests === 1 ? 'request' : 'requests'} · ${usd(l.usd)} API-equivalent`, '');
   if (l.byFamily.length) {
     out.push(row(['Model', 'API-equivalent', 'Share']), '|---|---:|---:|');
     for (const f of l.byFamily) out.push(row([FAMILY[f.family] ?? f.family, usd(f.usd), `${Math.round(f.share * 100)}%`]));
@@ -229,5 +231,5 @@ export function reportMarkdown(r: ReportInput): string {
   const sections = list.length
     ? [limits(r, list, inputs), pace(r, list), calibration(r, list, inputs), computer(r), endpoint(r), logs(r)]
     : [computer(r), endpoint(r), logs(r)];
-  return `${[head, ...sections].map(s => s.join('\n')).join('\n\n')}\n`;
+  return `${[head, ...sections].map(s => s.join('\n').trimEnd()).join('\n\n')}\n`;
 }
