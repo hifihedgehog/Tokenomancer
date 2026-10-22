@@ -12,13 +12,17 @@ const root = new URL('..', import.meta.url).pathname;
 const dir = process.argv[2] ?? join(root, 'media/glyphs');
 const out = process.argv[3] ?? join(root, 'media/tokenomancer-glyphs.woff');
 
+// One glyph unit is one pixel of the 14 px status-bar icon box; 100 font units per unit keeps every
+// coordinate an exact integer.
+const EM = 1400;
+
 // Code points are part of the manifest (`fontCharacter`), so they are fixed here, never derived from file order.
 const GLYPHS = { pinned: 0xe001, loose: 0xe002, calibrating: 0xe003, empty: 0xe004 };
 
 function svgFont() {
   return new Promise((resolve, reject) => {
     const chunks = [];
-    const font = new SVGIcons2SVGFontStream({ fontName: 'tokenomancer-glyphs', fontHeight: 1000, ascent: 1000, descent: 0, normalize: false, round: 1e3 });
+    const font = new SVGIcons2SVGFontStream({ fontName: 'tokenomancer-glyphs', fontHeight: EM, ascent: EM, descent: 0, normalize: false, round: 1e3 });
     font.on('data', c => chunks.push(c)).on('end', () => resolve(chunks.join(''))).on('error', reject);
     for (const [name, code] of Object.entries(GLYPHS)) {
       const glyph = createReadStream(join(dir, `${name}.svg`));
