@@ -7,6 +7,7 @@ import { BucketEstimator, BucketPersist, Estimate, Reading, Rounding, windowLeng
 import { UsageError, claudeDir, fetchUsage } from './usageApi';
 import { Price } from './pricing';
 import { fmtK, fmtMin, fmtPct, fmtSigma, fmtTime, label } from './format';
+import { DemoSource } from './demo';
 
 const HORIZON_MS = 8 * 24 * 3600_000; // weekly window plus a margin
 const STATE_KEY = 'tokenomancer.buckets.v2';
@@ -58,11 +59,15 @@ class Lens implements vscode.Disposable {
   private backoffMs = 0;
   private c = cfg();
   private disposables: vscode.Disposable[] = [];
+  private demo = process.env.TOKENOMANCER_DEMO === '1' ? new DemoSource() : undefined;
 
   constructor(private ctx: vscode.ExtensionContext) {
     this.tailer = new LogTailer(() => path.join(this.c.dir, 'projects'), HORIZON_MS, () => this.c.overrides);
-    const saved = ctx.globalState.get<Record<string, BucketPersist>>(STATE_KEY, {});
-    for (const [k, v] of Object.entries(saved)) this.estimators.set(k, new BucketEstimator(k, v));
+    if (this.demo) this.demo.bootstrap(this.ledger, this.estimators);
+    else {
+      const saved = ctx.globalState.get<Record<string, BucketPersist>>(STATE_KEY, {});
+      for (const [k, v] of Object.entries(saved)) this.estimators.set(k, new BucketEstimator(k, v));
+    }
 
     this.item.command = 'tokenomancer.showDetails';
     this.item.text = '$(pulse) Claude usage…';
@@ -104,7 +109,7 @@ class Lens implements vscode.Disposable {
 
   private scan() {
     try {
-      const evs = this.tailer.scan();
+      const evs = this.demo ? this.demo.scan() : this.tailer.scan();
       if (evs.length) {
         this.ledger.add(evs);
         this.ledger.prune(Date.now() - HORIZON_MS);
@@ -126,7 +131,7 @@ class Lens implements vscode.Disposable {
     try {
       // A reading describes the moment the server counted, so stamp it when the request is sent.
       const now = Date.now();
-      const res = await fetchUsage(this.c.dir);
+      const res = this.demo ? await this.demo.fetch(now) : await fetchUsage(this.c.dir);
       this.official = res.buckets;
       this.lastRaw = res.raw;
       for (const [k, r] of res.buckets) {
@@ -157,6 +162,7 @@ class Lens implements vscode.Disposable {
   }
 
   private persist() {
+    if (this.demo) return; // sample data must never overwrite real calibration
     const obj: Record<string, BucketPersist> = {};
     for (const [k, e] of this.estimators) obj[k] = e.toJSON();
     void this.ctx.globalState.update(STATE_KEY, obj);
