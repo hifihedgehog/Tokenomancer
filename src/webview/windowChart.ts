@@ -10,7 +10,7 @@ import { Ctx } from './ctx';
 import { Child, h, VNode } from './dom';
 import { ceil, clamp, dots, localBoundaries, max, min, round, WAITING, when, windowRange } from './fmt';
 import { icon } from './icons';
-import { atOrBefore, bandPath, Box, f1, fitLabels, laneAt, linePath, nearest, overlaps, scale, textW } from './scale';
+import { atOrBefore, bandPath, Box, f1, fitLabels, linePath, nearest, overlaps, scale, textW } from './scale';
 
 const HOUR = 3_600_000, DAY = 86_400_000, NONE = { t: [], v: [], s: [] };
 
@@ -37,10 +37,10 @@ export function windowFigure(c: Ctx, b: BucketVM, d?: DetailVM): VNode {
   marks.push(...xAxis(c, t0, t1, X, T, B, days, over));
   marks.push(...lanePaths(lanes, X, Y, 3 * vm.pollMs));
 
-  // Ribbons are clipped to the official run at each vertex and skipped where the reconstruction
-  // left it: the official number is the truth the curve answers to.
-  const xs = est.t.map(X), lane = (i: number) => laneAt(lanes, est.t[i]);
-  marks.push(...ribbons(xs, est.v, est.s, i => lane(i)?.lo ?? 0, i => lane(i)?.hi ?? 100, Y, 3),
+  // At this scale the ribbon is left unclipped: clipping each vertex to its official run made it
+  // flicker between runs. The zoom chart below does the exact clipping.
+  const xs = est.t.map(X);
+  marks.push(...ribbons(xs, est.v, est.s, () => 0, () => 100, Y, 3),
     h('line.even', { x1: L, y1: B, x2: R, y2: T }), h('path.line', { d: linePath(xs, est.v.map(Y)) }), hline('axis', L, R, T));
   over.push(label(R + 6, T + 4, 'limit'));
 

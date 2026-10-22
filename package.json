@@ -13,6 +13,11 @@
     "url": "https://github.com/hifihedgehog/Tokenomancer/issues"
   },
   "homepage": "https://github.com/hifihedgehog/Tokenomancer#readme",
+  "icon": "media/icon.png",
+  "galleryBanner": {
+    "color": "#17142B",
+    "theme": "dark"
+  },
   "engines": {
     "vscode": "^1.90.0"
   },
@@ -486,7 +491,37 @@
           "highContrastLight": "#B5200D"
         }
       }
-    ]
+    ],
+    "icons": {
+      "tokenomancer-pinned": {
+        "description": "Tokenomancer: pinned between official ticks",
+        "default": {
+          "fontPath": "media/tokenomancer-glyphs.woff",
+          "fontCharacter": "\\E001"
+        }
+      },
+      "tokenomancer-loose": {
+        "description": "Tokenomancer: loosely bounded",
+        "default": {
+          "fontPath": "media/tokenomancer-glyphs.woff",
+          "fontCharacter": "\\E002"
+        }
+      },
+      "tokenomancer-calibrating": {
+        "description": "Tokenomancer: calibrating",
+        "default": {
+          "fontPath": "media/tokenomancer-glyphs.woff",
+          "fontCharacter": "\\E003"
+        }
+      },
+      "tokenomancer-empty": {
+        "description": "Tokenomancer: no reading",
+        "default": {
+          "fontPath": "media/tokenomancer-glyphs.woff",
+          "fontCharacter": "\\E004"
+        }
+      }
+    }
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p .",
