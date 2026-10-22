@@ -1,6 +1,14 @@
 **
 !dist/extension.js
+!media/view.js
+!media/view.css
+!media/icon.png
+!media/tokenomancer-glyphs.woff
+!media/view-icon.svg
+!media/panel-light.svg
+!media/panel-dark.svg
 !package.json
 !README.md
 !LICENSE
 !CHANGELOG.md
+!THIRD_PARTY_NOTICES.md

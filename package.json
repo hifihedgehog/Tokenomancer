@@ -1,70 +1,402 @@
 {
   "name": "tokenomancer",
-  "displayName": "Tokenomancer",
-  "description": "See your Claude plan usage to the decimal. Tokenomancer reads Claude Code's live token logs and calibrates them against your official 5-hour, weekly, and Fable limits, so you know exactly where you stand between whole percentages.",
-  "version": "0.1.0",
+  "displayName": "Tokenomancer — Claude Usage to the Hundredth",
+  "description": "Claude plan usage to the hundredth of a percent, with an honest ± and a clear pinned or loose state, in your status bar. 5-hour, weekly and Fable limits, pace and run-out time, calibrated from your Claude Code logs.",
+  "version": "0.2.0",
   "publisher": "local",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "https://github.com/hifihedgehog/Tokenomancer.git"
   },
+  "bugs": {
+    "url": "https://github.com/hifihedgehog/Tokenomancer/issues"
+  },
+  "homepage": "https://github.com/hifihedgehog/Tokenomancer#readme",
   "engines": {
     "vscode": "^1.90.0"
   },
   "categories": [
-    "Other"
+    "AI",
+    "Visualization"
   ],
   "keywords": [
     "claude",
     "claude code",
+    "anthropic",
     "usage",
-    "tokens",
-    "rate limits",
-    "quota"
+    "usage limit",
+    "rate limit",
+    "quota",
+    "plan usage",
+    "5-hour limit",
+    "weekly limit",
+    "fable",
+    "max plan",
+    "status bar",
+    "usage meter",
+    "tokens"
   ],
+  "pricing": "Free",
   "main": "./dist/extension.js",
   "activationEvents": [
-    "onStartupFinished"
+    "onStartupFinished",
+    "onWebviewPanel:tokenomancer.dashboard"
   ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": true
+    },
+    "virtualWorkspaces": true
+  },
   "contributes": {
     "commands": [
       {
+        "command": "tokenomancer.openDashboard",
+        "title": "Open Dashboard",
+        "category": "Tokenomancer",
+        "icon": "$(graph-line)"
+      },
+      {
+        "command": "tokenomancer.glance",
+        "title": "Usage at a Glance",
+        "category": "Tokenomancer",
+        "icon": "$(pulse)"
+      },
+      {
         "command": "tokenomancer.refresh",
-        "title": "Tokenomancer: Refresh now"
+        "title": "Refresh Now",
+        "category": "Tokenomancer",
+        "icon": "$(refresh)"
       },
       {
         "command": "tokenomancer.showDetails",
-        "title": "Tokenomancer: Show full report"
+        "title": "Open Full Report",
+        "category": "Tokenomancer",
+        "icon": "$(output)"
+      },
+      {
+        "command": "tokenomancer.copySummary",
+        "title": "Copy Usage Summary",
+        "category": "Tokenomancer",
+        "icon": "$(copy)"
+      },
+      {
+        "command": "tokenomancer.showLog",
+        "title": "Show Log",
+        "category": "Tokenomancer",
+        "icon": "$(list-flat)"
+      },
+      {
+        "command": "tokenomancer.openSettings",
+        "title": "Open Settings",
+        "category": "Tokenomancer",
+        "icon": "$(gear)"
+      },
+      {
+        "command": "tokenomancer.previewSampleData",
+        "title": "Preview with Sample Data",
+        "category": "Tokenomancer",
+        "icon": "$(beaker)"
+      },
+      {
+        "command": "tokenomancer.exitSampleData",
+        "title": "Exit Sample Data",
+        "category": "Tokenomancer",
+        "icon": "$(beaker)"
       },
       {
         "command": "tokenomancer.resetCalibration",
-        "title": "Tokenomancer: Reset calibration"
+        "title": "Reset Calibration…",
+        "category": "Tokenomancer"
       }
     ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "tokenomancer.previewSampleData",
+          "when": "!tokenomancer.sample"
+        },
+        {
+          "command": "tokenomancer.exitSampleData",
+          "when": "tokenomancer.sample"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "tokenomancer.refresh",
+          "when": "view == tokenomancer.usage",
+          "group": "navigation@1"
+        },
+        {
+          "command": "tokenomancer.openDashboard",
+          "when": "view == tokenomancer.usage",
+          "group": "navigation@2"
+        },
+        {
+          "command": "tokenomancer.copySummary",
+          "when": "view == tokenomancer.usage",
+          "group": "1_more@1"
+        },
+        {
+          "command": "tokenomancer.showDetails",
+          "when": "view == tokenomancer.usage",
+          "group": "1_more@2"
+        },
+        {
+          "command": "tokenomancer.openSettings",
+          "when": "view == tokenomancer.usage",
+          "group": "1_more@3"
+        },
+        {
+          "command": "tokenomancer.previewSampleData",
+          "when": "view == tokenomancer.usage && !tokenomancer.sample",
+          "group": "2_sample@1"
+        },
+        {
+          "command": "tokenomancer.exitSampleData",
+          "when": "view == tokenomancer.usage && tokenomancer.sample",
+          "group": "2_sample@1"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "tokenomancer.refresh",
+          "when": "activeWebviewPanelId == 'tokenomancer.dashboard'",
+          "group": "navigation"
+        }
+      ]
+    },
+    "views": {
+      "explorer": [
+        {
+          "type": "webview",
+          "id": "tokenomancer.usage",
+          "name": "Claude Usage",
+          "visibility": "collapsed",
+          "icon": "media/view-icon.svg",
+          "contextualTitle": "Tokenomancer"
+        }
+      ]
+    },
     "configuration": {
       "title": "Tokenomancer",
       "properties": {
-        "tokenomancer.pollSeconds": {
-          "type": "number",
-          "default": 60,
-          "minimum": 30,
-          "description": "How often to read the official numbers. Precision depends on this: 60 s gives about \u00b10.01\u20130.03 points, 30 s a little better, 300 s about \u00b10.05\u20130.1. Below 30 s risks rate limiting."
+        "tokenomancer.statusBar.show": {
+          "type": "string",
+          "enum": [
+            "all",
+            "binding",
+            "pair",
+            "custom"
+          ],
+          "enumDescriptions": [
+            "Every limit: 5-hour, weekly, then any model-specific weekly limits.",
+            "One limit: the one you will reach first.",
+            "The 5-hour limit, plus whichever other limit you will reach first.",
+            "The limits listed in Status Bar Buckets, in that order."
+          ],
+          "default": "all",
+          "markdownDescription": "Which limits the status bar shows. The hover always lists every limit.",
+          "order": 1,
+          "scope": "window"
         },
         "tokenomancer.statusBarBuckets": {
           "type": "array",
           "items": {
-            "type": "string"
+            "type": "string",
+            "minLength": 1
           },
+          "uniqueItems": true,
           "default": [],
-          "description": "Limit buckets to show in the status bar, by endpoint key (e.g. five_hour, seven_day, seven_day_fable). Empty = 5-hour, weekly, and any Fable bucket. The full report lists available keys."
+          "order": 2,
+          "scope": "window",
+          "markdownDescription": "The limits to show when `#tokenomancer.statusBar.show#` is `custom`, by endpoint key and in order, for example `five_hour`, `seven_day`, `seven_day_fable`. The full report lists the keys your plan returns. If Show has never been set and this list is not empty, `custom` is used."
+        },
+        "tokenomancer.statusBar.uncertainty": {
+          "type": "string",
+          "enum": [
+            "off",
+            "first",
+            "every"
+          ],
+          "enumDescriptions": [
+            "No ± in the status bar. Digits still stop where the uncertainty begins.",
+            "Show the ± after the first limit.",
+            "Show the ± after every limit."
+          ],
+          "default": "off",
+          "markdownDescription": "Whether the status bar prints the ± uncertainty. With adaptive `#tokenomancer.precision#` the digits are honest without it: `46.4%` rather than `46.39%` when the uncertainty is ±0.16. The hover, dashboard and report always show the ±.",
+          "order": 3,
+          "scope": "window"
+        },
+        "tokenomancer.statusBar.icon": {
+          "type": "string",
+          "enum": [
+            "rune",
+            "codicon",
+            "none"
+          ],
+          "enumDescriptions": [
+            "Tokenomancer's glyphs: pinned, loose, calibrating.",
+            "Standard VS Code icons instead of Tokenomancer's glyphs.",
+            "No state icon."
+          ],
+          "default": "rune",
+          "markdownDescription": "The icon before the numbers. It shows how settled the first limit is, and turns into a warning or error icon near the limit.",
+          "order": 4,
+          "scope": "window"
+        },
+        "tokenomancer.statusBar.highlight": {
+          "type": "string",
+          "enum": [
+            "nearLimit",
+            "limitOnly",
+            "never"
+          ],
+          "enumDescriptions": [
+            "Warning background when a limit is about to run out, error background once it has.",
+            "Error background only once a limit is reached.",
+            "Never change the background. The icon and text still say when a limit is near."
+          ],
+          "default": "nearLimit",
+          "markdownDescription": "When the status bar item gets a warning or error background.",
+          "order": 5,
+          "scope": "window"
+        },
+        "tokenomancer.statusBar.clickAction": {
+          "type": "string",
+          "enum": [
+            "dashboard",
+            "glance",
+            "report",
+            "refresh"
+          ],
+          "enumDescriptions": [
+            "Open the dashboard.",
+            "Show every limit in a quick pick.",
+            "Open the full text report.",
+            "Read the official numbers now."
+          ],
+          "default": "dashboard",
+          "markdownDescription": "What clicking the status bar item does.",
+          "order": 6,
+          "scope": "window"
+        },
+        "tokenomancer.statusBar.alignment": {
+          "type": "string",
+          "enum": [
+            "right",
+            "left"
+          ],
+          "enumDescriptions": [
+            "With the language and notification items.",
+            "With the branch and problems items."
+          ],
+          "default": "right",
+          "markdownDescription": "Which side of the status bar the item sits on.",
+          "order": 7,
+          "scope": "window"
+        },
+        "tokenomancer.statusBar.priority": {
+          "type": "integer",
+          "default": 100,
+          "order": 8,
+          "scope": "window",
+          "markdownDescription": "Position among the items on the same side of the status bar. Higher values sit further left."
         },
         "tokenomancer.decimals": {
-          "type": "number",
+          "type": "integer",
           "default": 2,
           "minimum": 0,
           "maximum": 3,
-          "description": "Decimal places for estimated percentages. The hover shows the \u00b1 uncertainty, so you can see when the last digit is meaningful."
+          "order": 10,
+          "scope": "window",
+          "markdownDescription": "The most decimal places a percentage shows. With adaptive `#tokenomancer.precision#`, fewer appear when the uncertainty cannot support them."
+        },
+        "tokenomancer.precision": {
+          "type": "string",
+          "enum": [
+            "adaptive",
+            "fixed"
+          ],
+          "enumDescriptions": [
+            "Show only the digits the ± supports.",
+            "Always show the full number of decimal places."
+          ],
+          "default": "adaptive",
+          "markdownDescription": "How many of `#tokenomancer.decimals#` to show. Either way, readings that are out of date show as lower bounds, and limits still calibrating show as a range.",
+          "order": 11,
+          "scope": "window"
+        },
+        "tokenomancer.hover.graphics": {
+          "type": "string",
+          "enum": [
+            "images",
+            "text",
+            "off"
+          ],
+          "enumDescriptions": [
+            "Meters and the magnified scale as small images.",
+            "Meters drawn with text, for setups where hover images do not load.",
+            "Numbers only."
+          ],
+          "default": "images",
+          "markdownDescription": "How the status bar hover draws each limit.",
+          "order": 12,
+          "scope": "window"
+        },
+        "tokenomancer.alerts.mode": {
+          "type": "string",
+          "enum": [
+            "runOut",
+            "runOutAndLimit",
+            "off"
+          ],
+          "enumDescriptions": [
+            "Notify once per window when, at the current pace, a limit will run out before it resets.",
+            "Also notify when a limit is reached.",
+            "Never notify."
+          ],
+          "default": "runOut",
+          "markdownDescription": "When Tokenomancer shows a notification. Notifications respect Do Not Disturb and appear in one window only.",
+          "order": 20,
+          "scope": "application"
+        },
+        "tokenomancer.alerts.leadMinutes": {
+          "type": "integer",
+          "default": 30,
+          "minimum": 10,
+          "maximum": 180,
+          "order": 21,
+          "scope": "application",
+          "markdownDescription": "How early a run-out alert appears: once the projected time to 100% is this many minutes or less."
+        },
+        "tokenomancer.timeFormat": {
+          "type": "string",
+          "enum": [
+            "system",
+            "12h",
+            "24h"
+          ],
+          "enumDescriptions": [
+            "Your system's clock format.",
+            "12-hour clock, e.g. 1:30 PM.",
+            "24-hour clock, e.g. 13:30."
+          ],
+          "default": "system",
+          "markdownDescription": "How clock times such as reset times are shown.",
+          "order": 30,
+          "scope": "application"
+        },
+        "tokenomancer.pollSeconds": {
+          "type": "integer",
+          "default": 60,
+          "minimum": 30,
+          "maximum": 240,
+          "order": 40,
+          "scope": "application",
+          "markdownDescription": "How often to read the official numbers, in seconds. Shorter intervals pin the decimals more tightly: about ±0.01–0.03 points at 60 s. Slower than 240 s cannot calibrate. Every VS Code window shares one reading, so more windows do not mean more requests."
         },
         "tokenomancer.officialRounding": {
           "type": "string",
@@ -72,25 +404,95 @@
             "floor",
             "round"
           ],
+          "enumDescriptions": [
+            "37 means 37.00–37.99.",
+            "37 means 36.50–37.49."
+          ],
           "default": "floor",
-          "description": "How the official whole-number percentage is rounded. 'floor': 37 means 37.0\u201337.99. 'round': 37 means 36.5\u201337.49."
+          "markdownDescription": "How the official whole-number percentage is rounded.",
+          "order": 41,
+          "scope": "application"
         },
         "tokenomancer.claudeDir": {
           "type": "string",
           "default": "",
-          "description": "Claude Code config folder. Empty = CLAUDE_CONFIG_DIR or ~/.claude."
+          "order": 50,
+          "scope": "machine",
+          "markdownDescription": "Claude Code's config folder, which holds its login and logs. Empty uses `CLAUDE_CONFIG_DIR`, or `~/.claude`."
         },
         "tokenomancer.priceOverrides": {
           "type": "object",
           "default": {},
-          "description": "Override per-model weights (USD per million tokens), keyed by a substring of the model id. Example: {\"fable-5-1\": {\"input\": 10, \"output\": 50, \"cacheWrite5m\": 12.5, \"cacheWrite1h\": 20, \"cacheRead\": 0.25}}"
+          "order": 51,
+          "scope": "application",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "input": {
+                "type": "number",
+                "minimum": 0
+              },
+              "output": {
+                "type": "number",
+                "minimum": 0
+              },
+              "cacheWrite5m": {
+                "type": "number",
+                "minimum": 0
+              },
+              "cacheWrite1h": {
+                "type": "number",
+                "minimum": 0
+              },
+              "cacheRead": {
+                "type": "number",
+                "minimum": 0
+              }
+            }
+          },
+          "markdownDescription": "Per-model weights in USD per million tokens, keyed by a substring of the model id; the longest match wins. Only the ratios matter, because what 1% costs is learned from your own usage. Changes apply to log events read from now on. Example: `{\"fable-5-1\": {\"input\": 10, \"output\": 50, \"cacheWrite5m\": 12.5, \"cacheWrite1h\": 20, \"cacheRead\": 0.25}}`"
         }
       }
-    }
+    },
+    "colors": [
+      {
+        "id": "tokenomancer.accent",
+        "description": "Tokenomancer: the accent for usage marks (meters, the Loupe, chart lines).",
+        "defaults": {
+          "light": "#6A41D6",
+          "dark": "#B4A2FF",
+          "highContrast": "#CDBEFF",
+          "highContrastLight": "#4B1FB0"
+        }
+      },
+      {
+        "id": "tokenomancer.warning",
+        "description": "Tokenomancer: a limit that will run out before it resets.",
+        "defaults": {
+          "light": "#9A6700",
+          "dark": "#CCA700",
+          "highContrast": "#FFD370",
+          "highContrastLight": "#895503"
+        }
+      },
+      {
+        "id": "tokenomancer.critical",
+        "description": "Tokenomancer: a limit that has been reached.",
+        "defaults": {
+          "light": "#B42318",
+          "dark": "#F14C4C",
+          "highContrast": "#F48771",
+          "highContrastLight": "#B5200D"
+        }
+      }
+    ]
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p .",
-    "build": "esbuild src/extension.ts --bundle --platform=node --target=node20 --format=cjs --external:vscode --outfile=dist/extension.js --minify",
+    "build:ext": "esbuild src/extension.ts --bundle --platform=node --target=node20 --format=cjs --external:vscode --outfile=dist/extension.js --minify",
+    "build:view": "esbuild src/webview/main.ts --bundle --platform=browser --format=iife --target=chrome114 --minify --outfile=media/view.js",
+    "build": "npm run build:ext && npm run build:view",
     "build:test": "esbuild src/test/*.test.ts --bundle --platform=node --target=node20 --format=cjs --outdir=out/test",
     "test": "npm run build:test && node --test out/test/*.test.js",
     "package": "npm run typecheck && npm test && npm run build && vsce package --no-dependencies"

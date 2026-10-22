@@ -27,13 +27,15 @@ export function csp(cspSource: string, n: string): string {
 export function renderShell(o: ShellOptions): string {
   // Both values land inside the CSP itself, where escaping can't help: refuse anything odd.
   if (!/^[A-Za-z0-9+/_-]{16,}={0,2}$/.test(o.nonce)) throw new Error('renderShell: bad nonce');
-  if (/[;'"\s]/.test(o.cspSource.trim()) || !o.cspSource.trim()) throw new Error('renderShell: bad cspSource');
+  // VS Code's cspSource is a space-separated source list such as "'self' https://*.vscode-cdn.net".
+  const src = o.cspSource.trim();
+  if (!src || !src.split(/\s+/).every(t => /^('self'|[a-z][a-z0-9+.-]*:(\/\/[A-Za-z0-9*+.:/_-]+)?)$/i.test(t))) throw new Error('renderShell: bad cspSource');
   const surface = o.surface === 'view' ? 'view' : 'panel';
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="${attr(csp(o.cspSource.trim(), o.nonce))}">
+<meta http-equiv="Content-Security-Policy" content="${attr(csp(src, o.nonce))}">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="stylesheet" href="${attr(o.styleUri)}">
 <title>Claude Usage</title>

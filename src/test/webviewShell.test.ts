@@ -37,6 +37,9 @@ test('values that land inside the CSP itself are refused, not escaped', () => {
   assert.throws(() => renderShell({ ...base, nonce: 'short' }), /bad nonce/);
   assert.throws(() => renderShell({ ...base, cspSource: "https://x; script-src 'unsafe-inline'" }), /bad cspSource/);
   assert.throws(() => renderShell({ ...base, cspSource: '' }), /bad cspSource/);
+  assert.throws(() => renderShell({ ...base, cspSource: "'unsafe-inline'" }), /bad cspSource/);
+  // The real value from VS Code 1.105 / VSCodium is a source list (quotes are attribute-escaped in the meta tag).
+  assert.ok(renderShell({ ...base, cspSource: "'self' https://*.vscode-cdn.net" }).includes('style-src &#39;self&#39; https://*.vscode-cdn.net;'));
 });
 
 test('nonce() is 32 base-62 characters and fresh each time', () => {
