@@ -16,14 +16,16 @@ export interface UsageResponse {
 }
 
 export class UsageError extends Error {
-  constructor(message: string, readonly kind: 'no-credentials' | 'expired' | 'auth' | 'rate-limited' | 'network' | 'format', readonly retryAfterMs?: number, readonly raw?: unknown) {
+  constructor(message: string, readonly kind: 'no-credentials' | 'expired' | 'auth' | 'rate-limited' | 'network' | 'format', readonly retryAfterMs?: number, readonly raw?: unknown,
+    /** Short machine-readable cause for the UI: "ENOTFOUND", "HTTP 429", … */
+    readonly code?: string) {
     super(message);
   }
 }
 
-export function claudeDir(override?: string): string {
+export function claudeDir(override?: string, env: Record<string, string | undefined> = process.env): string {
   if (override && override.trim()) return override.trim().replace(/^~(?=$|[\\/])/, os.homedir());
-  if (process.env.CLAUDE_CONFIG_DIR) return process.env.CLAUDE_CONFIG_DIR;
+  if (env.CLAUDE_CONFIG_DIR) return env.CLAUDE_CONFIG_DIR;
   return path.join(os.homedir(), '.claude');
 }
 
@@ -73,6 +75,23 @@ export function parseBuckets(json: any): Map<string, Reading> {
   return out;
 }
 
+/** The error code behind a failed fetch(): undici puts it on `cause`, sometimes inside an AggregateError. */
+export function networkCode(e: any): string | undefined {
+  const c = e?.cause;
+  const code = c?.code ?? c?.errors?.find((x: any) => x?.code)?.code;
+  if (typeof code === 'string' && code) return code;
+  if (e?.name === 'TimeoutError' || c?.name === 'TimeoutError') return 'ETIMEDOUT';
+  return undefined;
+}
+
+/** Retry-After as delta-seconds or an HTTP date; undefined when absent or not in the future. */
+export function retryAfterMs(header: string | null, now = Date.now()): number | undefined {
+  if (!header?.trim()) return undefined;
+  const s = Number(header);
+  const ms = isFinite(s) ? s * 1000 : Date.parse(header) - now;
+  return isFinite(ms) && ms > 0 ? ms : undefined;
+}
+
 export async function fetchUsage(dir: string): Promise<UsageResponse> {
   const creds = await readCredentials(dir);
   let res: Response;
@@ -83,21 +102,23 @@ export async function fetchUsage(dir: string): Promise<UsageResponse> {
         Authorization: `Bearer ${creds.accessToken}`,
         'anthropic-beta': 'oauth-2025-04-20',
         Accept: 'application/json',
-        'User-Agent': 'tokenomancer/0.1',
+        'User-Agent': 'tokenomancer/0.2',
       },
       signal: AbortSignal.timeout(15_000),
     });
   } catch (e: any) {
-    throw new UsageError(`Network error: ${e?.message ?? e}`, 'network');
+    const code = networkCode(e);
+    const msg = code ? `Can't reach api.anthropic.com (${code})` : `Can't reach api.anthropic.com: ${e?.message ?? e}`;
+    throw new UsageError(msg, 'network', undefined, undefined, code);
   }
+  const code = `HTTP ${res.status}`;
   if (res.status === 401 || res.status === 403) {
-    throw new UsageError(`Usage endpoint refused the login token (HTTP ${res.status}). Send a message in Claude Code to refresh it.`, 'auth');
+    throw new UsageError(`Usage endpoint refused the login token (HTTP ${res.status}). Send a message in Claude Code to refresh it.`, 'auth', undefined, undefined, code);
   }
   if (res.status === 429) {
-    const ra = Number(res.headers.get('retry-after'));
-    throw new UsageError('Usage endpoint is rate limiting; backing off.', 'rate-limited', isFinite(ra) && ra > 0 ? ra * 1000 : undefined);
+    throw new UsageError('Usage endpoint is rate limiting; backing off.', 'rate-limited', retryAfterMs(res.headers.get('retry-after')), undefined, code);
   }
-  if (!res.ok) throw new UsageError(`Usage endpoint returned HTTP ${res.status}.`, 'network');
+  if (!res.ok) throw new UsageError(`Usage endpoint returned HTTP ${res.status}.`, 'network', undefined, undefined, code);
   let json: unknown;
   try { json = await res.json(); } catch { throw new UsageError('Usage endpoint returned something other than JSON.', 'format'); }
   const buckets = parseBuckets(json);
