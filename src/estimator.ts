@@ -62,6 +62,9 @@ export interface Estimate {
   minutesTo100?: number;
   resetsAt?: string | null;
   windowStart?: number;
+  lo?: number;          // proven bounds on the current value, in points (set once calibrated)
+  hi?: number;
+  unseen?: boolean;     // the official number jumped past what local usage explains
 }
 
 const MAX_SAMPLES = 60;
@@ -341,6 +344,7 @@ export class BucketEstimator {
     const floorNow = official + off;
     L = Math.max(L, floorNow);
     if (U < L) U = L;
+    base.lo = L; base.hi = U; base.unseen = unseen;
 
     // Inside the bounds, the count from the window start is the best point estimate when it fits.
     const ws = windowStart !== undefined && windowStart <= R[0].t ? sinceT(windowStart) : undefined;
