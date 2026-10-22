@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { AlertOptions, AlertPolicy } from '../ui/alertPolicy';
+import { AlertOptions, AlertPolicy, firedFileName } from '../ui/alertPolicy';
 import { HOUR, MIN, NOW, bucket, build, edgeBuckets, est } from './nativeFixtures';
 import type { ViewModel } from '../ui/types';
 
@@ -86,4 +86,9 @@ test('runOutAndLimit also announces a reached limit, once', () => {
   assert.equal(a.message, 'Claude 5-hour limit reached. It resets at 14:24 (in 1h 12m).');
   assert.ok(a.id.endsWith(':limit'));
   assert.deepEqual(p.decide(vm, opts({ mode: 'runOutAndLimit' })), []);
+});
+
+test('fired files are safe names on every OS', () => {
+  assert.equal(firedFileName('five_hour@1792670400000:runOut'), 'five_hour@1792670400000_runOut.fired');
+  assert.equal(firedFileName('seven_day_$(x)/../a\\b@1:limit'), 'seven_day___x__.._a_b@1_limit.fired');
 });
